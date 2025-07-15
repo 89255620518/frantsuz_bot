@@ -13,20 +13,15 @@ import {
 } from './ticketsHandler.js';
 import { showContacts } from './contactsHandler.js';
 import { checkPaymentStatus } from '../../services/paykeeper.js';
-import { showAdminTicketsMenu, handleAdminMessages, setupAdminHandlers } from './adminHandlers.js';
 import { User } from '../../models/User.js';
+import { handleAdminMessages, setupAdminHandlers, showAdminTicketsMenu } from './admin/adminHandlers.js';
 
 export const setupEventHandlers = () => {
-    // Настройка обработчиков администратора
     setupAdminHandlers();
 
-    // Обработчик /start
     bot.onText(/\/start/, handleStartCommand);
-
-    // Обработчик /tickets
     bot.onText(/\/tickets/, handleTicketsCommand);
 
-    // Обработчик callback_query
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         if (!msg?.chat?.id) return;
@@ -41,7 +36,6 @@ export const setupEventHandlers = () => {
                 return;
             }
 
-            // Проверяем, является ли пользователь администратором
             const dbUser = await User.findOne({ where: { telegram_id: user.id } });
             const isAdmin = dbUser?.is_admin || false;
 
@@ -87,24 +81,20 @@ export const setupEventHandlers = () => {
         }
     });
 
-    // Обработчик сообщений
     bot.on('message', async (msg) => {
         if (!msg?.chat?.id) return;
 
         const chatId = msg.chat.id;
         const userState = userStates[chatId];
 
-        // Проверяем, является ли пользователь администратором
         const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
-        const isAdmin = dbUser?.is_admin || false;
 
-        // Обработка сообщений администратора
+        // Добавляем вызов обработчика административных сообщений
         if (userState?.isAdminAction) {
             await handleAdminMessages(msg);
             return;
         }
 
-        // Обычные сообщения пользователя
         if (!msg.text || msg.text.startsWith('/') || !userState) return;
 
         try {

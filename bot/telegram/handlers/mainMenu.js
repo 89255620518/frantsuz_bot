@@ -1,42 +1,58 @@
-// mainMenu.js
 import { bot } from '../botInstance.js';
 import { User } from '../../models/User.js';
 
+// Добавим флаг для отслеживания показа меню
+const menuShown = new Set();
+
 export const showMainMenu = async (chatId, isAdmin = false) => {
-    const buttons = [
-        [
-            { text: '🍽️ Меню', web_app: { url: process.env.WEB_APP_URL_MENU } },
-            { text: '🎯 Бильярд', web_app: { url: process.env.WEB_APP_URL_BILLARD } }
-        ],
-        [
-            { text: '🎤 Караоке', web_app: { url: process.env.WEB_APP_URL_CARAOKE } },
-            { text: '💿 Диско-бар', web_app: { url: process.env.WEB_APP_URL_dISCO } }
-        ],
-        [
-            { text: '🛋️ Лаунж зона', web_app: { url: process.env.WEB_APP_URL_LAUNZH } },
-            { text: '🎮 Playstation', web_app: { url: process.env.WEB_APP_URL_PLAYSTATIONS } }
-        ],
-        [
-            { text: '🎲 Настольные игры', web_app: { url: process.env.WEB_APP_URL_TABLEPLAY } },
-            { text: '🎟️ Купить билеты', callback_data: 'show_tickets' }
-        ],
-        [
-            { text: '🛎️ Бронирование', web_app: { url: process.env.WEB_APP_URL_RESERVE } },
-            { text: '📞 Контакты', callback_data: 'contacts' }
-        ]
-    ];
-
-    if (isAdmin) {
-        buttons.push([
-            { text: '🛠️ Управление билетами', callback_data: 'admin_tickets' }
-        ]);
+    // Проверяем, не показывали ли уже меню этому чату
+    if (menuShown.has(chatId)) {
+        return;
     }
+    menuShown.add(chatId);
 
-    await bot.sendMessage(chatId, '👇 Выберите раздел:', {
-        reply_markup: {
-            inline_keyboard: buttons
+    try {
+        const buttons = [
+            [
+                { text: '🍽️ Меню', web_app: { url: process.env.WEB_APP_URL_MENU } },
+                { text: '🎯 Бильярд', web_app: { url: process.env.WEB_APP_URL_BILLARD } }
+            ],
+            [
+                { text: '🎤 Караоке', web_app: { url: process.env.WEB_APP_URL_CARAOKE } },
+                { text: '💿 Диско-бар', web_app: { url: process.env.WEB_APP_URL_dISCO } }
+            ],
+            [
+                { text: '🛋️ Лаунж зона', web_app: { url: process.env.WEB_APP_URL_LAUNZH } },
+                { text: '🎮 Playstation', web_app: { url: process.env.WEB_APP_URL_PLAYSTATIONS } }
+            ],
+            [
+                { text: '🎲 Настольные игры', web_app: { url: process.env.WEB_APP_URL_TABLEPLAY } },
+                { text: '🎟️ Купить билеты', callback_data: 'show_tickets' }
+            ],
+            [
+                { text: '🛎️ Бронирование', web_app: { url: process.env.WEB_APP_URL_RESERVE } },
+                { text: '📞 Контакты', callback_data: 'contacts' }
+            ]
+        ];
+
+        if (isAdmin) {
+            buttons.push([
+                { text: '🛠️ Управление билетами', callback_data: 'admin_tickets' }
+            ]);
         }
-    });
+
+        await bot.sendMessage(chatId, '👇 Выберите раздел:', {
+            reply_markup: {
+                inline_keyboard: buttons
+            }
+        });
+
+        // Через 5 секунд разрешаем показ меню снова
+        setTimeout(() => menuShown.delete(chatId), 5000);
+    } catch (error) {
+        console.error('Error showing main menu:', error);
+        menuShown.delete(chatId);
+    }
 };
 
 export const handleStartCommand = async (msg) => {
@@ -65,7 +81,7 @@ export const handleStartCommand = async (msg) => {
             first_name: dbUser.first_name
         });
 
-        const isAdmin = dbUser.is_admin; // Проверяем, является ли пользователь администратором
+        const isAdmin = dbUser.is_admin;
 
         const welcomeText = `
         🎭 ${created ? 'Добро пожаловать' : 'С возвращением'}, ${dbUser.first_name} в Развлекательный клуб "Француз"!
@@ -83,7 +99,7 @@ export const handleStartCommand = async (msg) => {
         • 🍽️ Бар и кухня с изысканными блюдами
 
         👇 Выберите раздел, который вас интересует:
-            `;
+        `;
 
         await bot.sendMessage(chatId, welcomeText);
         await showMainMenu(chatId, isAdmin);

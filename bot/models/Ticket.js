@@ -14,18 +14,9 @@ const initTicket = (sequelize) => {
     Ticket.init(
         {
             id: {
-                type: DataTypes.UUID,
-                defaultValue: DataTypes.UUIDV4,
+                type: DataTypes.INTEGER,
+                autoIncrement: true,
                 primaryKey: true,
-                comment: 'Уникальный идентификатор билета'
-            },
-            user_id: {
-                type: DataTypes.BIGINT,
-                allowNull: true,
-                references: {
-                    model: 'users',
-                    key: 'telegram_id'
-                },
             },
             title: {
                 type: DataTypes.STRING(100),
