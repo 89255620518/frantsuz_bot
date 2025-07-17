@@ -1,6 +1,19 @@
 import { Model, DataTypes } from "sequelize";
 
 class User extends Model {
+    static associate(models) {
+        this.hasMany(models.Ticket, {
+            foreignKey: 'user_id',
+            as: 'tickets'
+        });
+        
+        this.hasMany(models.UserTicket, {
+            foreignKey: 'user_id',
+            targetKey: 'telegram_id',
+            as: 'user_tickets'
+        });
+    }
+    
     static async findOrCreateFromTelegram(telegramUser) {
         if (!telegramUser?.id) {
             throw new Error('Invalid Telegram user data: missing id');

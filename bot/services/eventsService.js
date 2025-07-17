@@ -1,6 +1,6 @@
-import { Ticket } from '../models/Ticket.js';
+import { Ticket } from '../models/Event.js';
 
-class TicketService {
+class eventService {
   // Создание билета (для админа)
   async createTicket(ticketData) {
     return await Ticket.create({
@@ -10,7 +10,6 @@ class TicketService {
       event_date: ticketData.event_date,
       event_location: ticketData.event_location,
       price: ticketData.price,
-      ticket_number: ticketData.ticket_number || this.generateTicketNumber(),
       is_used: false
     });
   }
@@ -29,7 +28,7 @@ class TicketService {
   async updateTicket(ticketId, updateData) {
     const ticket = await Ticket.findByPk(ticketId);
     if (!ticket) throw new Error('Билет не найден');
-    
+
     return await ticket.update(updateData);
   }
 
@@ -37,7 +36,7 @@ class TicketService {
   async deleteTicket(ticketId) {
     const ticket = await Ticket.findByPk(ticketId);
     if (!ticket) throw new Error('Билет не найден');
-    
+
     await ticket.destroy();
     return true;
   }
@@ -49,5 +48,5 @@ class TicketService {
 }
 
 // Создаем экземпляр сервиса и экспортируем его
-const ticketService = new TicketService();
-export default ticketService;
+const EventService = new eventService();
+export default EventService;

@@ -1,7 +1,7 @@
 export class AdminEventManager {
-    constructor(bot, ticketService, userStates) {
+    constructor(bot, EventService, userStates) {
         this.bot = bot;
-        this.ticketService = ticketService;
+        this.eventService = EventService;
         this.userStates = userStates;
         this.editSteps = {
             TITLE: 'edit_title',
@@ -15,19 +15,20 @@ export class AdminEventManager {
     }
 
     async showMenu(chatId) {
-        await this.bot.sendMessage(chatId, '🛠️ Управление билетами:', {
+        await this.bot.sendMessage(chatId, '🎛️ <b>Панель управления мероприятиями</b>', {
+            parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '➕ Создать билет', callback_data: 'admin_create_ticket' },
-                        { text: '📋 Список билетов', callback_data: 'admin_list_tickets' }
+                        { text: '✨ Создать мероприятие', callback_data: 'admin_create_ticket' },
+                        { text: '📜 Список мероприятий', callback_data: 'admin_list_tickets' }
                     ],
                     [
-                        { text: '✏️ Редактировать билет', callback_data: 'admin_edit_ticket_select' },
-                        { text: '❌ Удалить билет', callback_data: 'admin_delete_ticket_select' }
+                        { text: '✏️ Редактировать', callback_data: 'admin_edit_ticket_select' },
+                        { text: '🗑️ Удалить', callback_data: 'admin_delete_ticket_select' }
                     ],
                     [
-                        { text: '🔙 На главную', callback_data: 'back_to_main' }
+                        { text: '🏠 На главную', callback_data: 'back_to_main' }
                     ]
                 ]
             }
@@ -36,31 +37,131 @@ export class AdminEventManager {
 
     async listTickets(chatId) {
         try {
-            const tickets = await this.ticketService.getAllTickets();
+            const tickets = await this.eventService.getAllTickets();
 
             if (!tickets || tickets.length === 0) {
-                return await this.bot.sendMessage(chatId, '📭 Список билетов пуст');
+                return await this.bot.sendMessage(
+                    chatId,
+                    '📭 <b>Список мероприятий пуст</b>\n\n' +
+                    'Здесь будут отображаться все созданные мероприятия.',
+                    { parse_mode: 'HTML' }
+                );
             }
 
-            let message = '🎟️ <b>Список билетов:</b>\n\n';
-            tickets.forEach(ticket => {
-                message += `▫️ <b>${ticket.title}</b>\n` +
-                    `ID: ${ticket.id}\n` +
-                    `Дата: ${new Date(ticket.event_date).toLocaleDateString()}\n` +
-                    `Цена: ${ticket.price} руб.\n\n`;
-            });
+            await this.bot.sendMessage(
+                chatId,
+                '📋 <b>Список мероприятий:</b>\n' +
+                `Всего мероприятий: <b>${tickets.length}</b>`,
+                { parse_mode: 'HTML' }
+            );
 
-            await this.bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+            for (const ticket of tickets) {
+                try {
+                    const eventDate = new Date(ticket.event_date);
+                    const formattedDate = eventDate.toLocaleDateString('ru-RU', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                        weekday: 'long'
+                    });
+                    const formattedTime = eventDate.toLocaleTimeString('ru-RU', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    const message =
+                        `🎭 <b>${ticket.title}</b>\n\n` +
+                        `📅 <b>Дата:</b> ${formattedDate} в ${formattedTime}\n` +
+                        `📍 <b>Место:</b> ${ticket.event_location}\n` +
+                        `💰 <b>Цена:</b> ${ticket.price} руб.\n\n` +
+                        `🆔 ID: <code>${ticket.id}</code>\n` +
+                        `📝 <b>Описание:</b>\n${ticket.description || 'нет описания'}\n\n` +
+                        `🔢 Номер билета: <code>${ticket.ticket_number}</code>`;
+
+                    if (ticket.image_url && ticket.image_url.startsWith('http')) {
+                        await this.bot.sendPhoto(chatId, ticket.image_url, {
+                            caption: message,
+                            parse_mode: 'HTML'
+                        });
+                    } else {
+                        await this.bot.sendMessage(chatId, message, {
+                            parse_mode: 'HTML',
+                            disable_web_page_preview: true
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Ошибка при отправке билета ID ${ticket.id}:`, error);
+                    await this.bot.sendMessage(
+                        chatId,
+                        `⚠️ <b>Ошибка отображения билета ID: ${ticket.id}</b>\n` +
+                        `Название: ${ticket.title}\n` +
+                        `Попробуйте просмотреть его через редактирование`,
+                        { parse_mode: 'HTML' }
+                    );
+                }
+            }
+
             await this.showMenu(chatId);
 
         } catch (error) {
             console.error('Ошибка при получении списка билетов:', error);
-            await this.bot.sendMessage(chatId, '⚠️ Произошла ошибка при получении списка билетов');
+            await this.bot.sendMessage(
+                chatId,
+                '⚠️ <b>Ошибка при загрузке мероприятий</b>\n' +
+                'Попробуйте позже или обратитесь к разработчику',
+                { parse_mode: 'HTML' }
+            );
+        }
+    }
+
+    async sendTicketDetails(chatId, ticket) {
+        try {
+            const eventDate = new Date(ticket.event_date);
+            const formattedDate = eventDate.toLocaleDateString('ru-RU', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+                weekday: 'long'
+            });
+            const formattedTime = eventDate.toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            const message =
+                `🎟️ <b>${ticket.title}</b>\n\n` +
+                `📅 <b>Дата и время:</b>\n${formattedDate} в ${formattedTime}\n\n` +
+                `📍 <b>Место проведения:</b>\n${ticket.event_location}\n\n` +
+                `💰 <b>Цена билета:</b> ${ticket.price} руб.\n\n` +
+                `📝 <b>Описание:</b>\n${ticket.description || 'нет описания'}\n\n` +
+                `🆔 ID: <code>${ticket.id}</code>\n` +
+                `🔢 Номер билета: <code>${ticket.ticket_number}</code>`;
+
+            if (ticket.image_url && ticket.image_url.startsWith('http')) {
+                await this.bot.sendPhoto(chatId, ticket.image_url, {
+                    caption: message,
+                    parse_mode: 'HTML'
+                });
+            } else {
+                await this.bot.sendMessage(chatId, message, {
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: true
+                });
+            }
+        } catch (error) {
+            console.error('Ошибка при отправке деталей билета:', error);
+            throw error;
         }
     }
 
     async startEditTicket(chatId) {
-        await this.bot.sendMessage(chatId, '✏️ Введите ID билета для редактирования или нажмите /cancel для отмены:');
+        await this.bot.sendMessage(
+            chatId,
+            '✏️ <b>Редактирование мероприятия</b>\n\n' +
+            'Введите ID мероприятия, которое хотите изменить:\n' +
+            'Или нажмите /cancel для отмены',
+            { parse_mode: 'HTML' }
+        );
         this.userStates[chatId] = {
             isAdminAction: true,
             step: 'selecting_ticket_for_edit'
@@ -69,9 +170,14 @@ export class AdminEventManager {
 
     async processEditTicketSelection(chatId, ticketId) {
         try {
-            const ticket = await this.ticketService.getTicketById(ticketId);
+            const ticket = await this.eventService.getTicketById(ticketId);
             if (!ticket) {
-                return await this.bot.sendMessage(chatId, '❌ Билет с указанным ID не найден');
+                return await this.bot.sendMessage(
+                    chatId,
+                    '❌ <b>Мероприятие не найдено</b>\n\n' +
+                    'Проверьте правильность введенного ID',
+                    { parse_mode: 'HTML' }
+                );
             }
 
             this.userStates[chatId] = {
@@ -86,7 +192,12 @@ export class AdminEventManager {
 
         } catch (error) {
             console.error('Ошибка при получении билета:', error);
-            await this.bot.sendMessage(chatId, '⚠️ Произошла ошибка при получении билета');
+            await this.bot.sendMessage(
+                chatId,
+                '⚠️ <b>Ошибка при загрузке мероприятия</b>\n' +
+                'Попробуйте позже или обратитесь к разработчику',
+                { parse_mode: 'HTML' }
+            );
         }
     }
 
@@ -94,15 +205,18 @@ export class AdminEventManager {
         const state = this.userStates[chatId];
         const ticket = state.editedTicket;
 
-        let message = `✏️ <b>Редактирование билета ID: ${ticket.id}</b>\n\n`;
-        message += `Текущее значение <b>${this.getFieldName(field)}</b>:\n` +
-                  `${ticket[field] || 'не указано'}\n\n` +
-                  'Введите новое значение или выберите действие:';
+        let message = `✏️ <b>Редактирование мероприятия</b>\n\n`;
+        message += `🆔 ID: <code>${ticket.id}</code>\n\n`;
+        message += `📌 <b>${this.getFieldName(field)}:</b>\n`;
+        message += `<i>${ticket[field] || 'не указано'}</i>\n\n`;
+        message += 'Введите новое значение или выберите действие:';
 
         const keyboard = [
             [{ text: '⏭️ Пропустить', callback_data: `edit_skip_${field}` }],
-            [{ text: '❌ Отменить редактирование', callback_data: 'edit_cancel' }],
-            [{ text: '✅ Завершить', callback_data: 'edit_finish' }]
+            [
+                { text: '❌ Отменить', callback_data: 'edit_cancel' },
+                { text: '✅ Завершить', callback_data: 'edit_finish' }
+            ]
         ];
 
         await this.bot.sendMessage(chatId, message, {
@@ -119,7 +233,12 @@ export class AdminEventManager {
             switch (state.step) {
                 case this.editSteps.TITLE:
                     if (text.length < 3) {
-                        await this.bot.sendMessage(chatId, '❌ Название должно содержать минимум 3 символа');
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ <b>Название слишком короткое</b>\n' +
+                            'Минимальная длина - 3 символа',
+                            { parse_mode: 'HTML' }
+                        );
                         return;
                     }
                     state.editedTicket.title = text;
@@ -135,7 +254,12 @@ export class AdminEventManager {
 
                 case this.editSteps.DATE:
                     if (!this.validateDate(text)) {
-                        await this.bot.sendMessage(chatId, '❌ Неверный формат даты. Используйте ГГГГ-ММ-ДД');
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ <b>Неверный формат даты</b>\n' +
+                            'Используйте формат: <code>ГГГГ-ММ-ДД</code>',
+                            { parse_mode: 'HTML' }
+                        );
                         return;
                     }
                     state.editedTicket.event_date = text;
@@ -145,7 +269,12 @@ export class AdminEventManager {
 
                 case this.editSteps.LOCATION:
                     if (text.length < 5) {
-                        await this.bot.sendMessage(chatId, '❌ Место должно содержать минимум 5 символов');
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ <b>Название места слишком короткое</b>\n' +
+                            'Минимальная длина - 5 символов',
+                            { parse_mode: 'HTML' }
+                        );
                         return;
                     }
                     state.editedTicket.event_location = text;
@@ -156,7 +285,12 @@ export class AdminEventManager {
                 case this.editSteps.PRICE:
                     const price = parseFloat(text);
                     if (isNaN(price) || price <= 0) {
-                        await this.bot.sendMessage(chatId, '❌ Введите корректную цену (положительное число)');
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ <b>Неверная цена</b>\n' +
+                            'Введите положительное число',
+                            { parse_mode: 'HTML' }
+                        );
                         return;
                     }
                     state.editedTicket.price = price;
@@ -176,7 +310,12 @@ export class AdminEventManager {
             }
         } catch (error) {
             console.error('Ошибка при обработке шага редактирования:', error);
-            await this.bot.sendMessage(chatId, '⚠️ Произошла ошибка при обработке данных');
+            await this.bot.sendMessage(
+                chatId,
+                '⚠️ <b>Ошибка при обработке данных</b>\n' +
+                'Попробуйте еще раз',
+                { parse_mode: 'HTML' }
+            );
             delete this.userStates[chatId];
         }
     }
@@ -188,7 +327,11 @@ export class AdminEventManager {
         try {
             if (data === 'edit_cancel') {
                 delete this.userStates[chatId];
-                await this.bot.sendMessage(chatId, '❌ Редактирование отменено');
+                await this.bot.sendMessage(
+                    chatId,
+                    '❌ <b>Редактирование отменено</b>',
+                    { parse_mode: 'HTML' }
+                );
                 await this.showMenu(chatId);
                 return;
             }
@@ -196,7 +339,7 @@ export class AdminEventManager {
             if (data.startsWith('edit_skip_')) {
                 const field = data.replace('edit_skip_', '');
                 const nextField = this.getNextField(field);
-                
+
                 if (nextField) {
                     state.step = this.editSteps[nextField.toUpperCase()];
                     await this.showEditFieldMenu(chatId, nextField);
@@ -214,10 +357,16 @@ export class AdminEventManager {
 
             if (data === 'edit_confirm') {
                 const { ticketId, editedTicket } = state;
-                const updatedTicket = await this.ticketService.updateTicket(ticketId, editedTicket);
+                const updatedTicket = await this.eventService.updateTicket(ticketId, editedTicket);
                 delete this.userStates[chatId];
-                
-                await this.bot.sendMessage(chatId, `✅ Билет "${updatedTicket.title}" успешно обновлен!`);
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ <b>Мероприятие обновлено!</b>\n\n` +
+                    `🎭 <b>${updatedTicket.title}</b>\n` +
+                    `🆔 ID: <code>${updatedTicket.id}</code>`,
+                    { parse_mode: 'HTML' }
+                );
                 await this.showMenu(chatId);
                 return;
             }
@@ -230,20 +379,23 @@ export class AdminEventManager {
 
         } catch (error) {
             console.error('Ошибка при обработке callback:', error);
-            await this.bot.sendMessage(chatId, '⚠️ Произошла ошибка при обработке команды');
+            await this.bot.sendMessage(
+                chatId,
+                '⚠️ <b>Ошибка при обработке команды</b>',
+                { parse_mode: 'HTML' }
+            );
             delete this.userStates[chatId];
         }
     }
 
-    // Вспомогательные методы
     getFieldName(field) {
         const names = {
-            title: 'Название',
+            title: 'Название мероприятия',
             description: 'Описание',
-            event_date: 'Дата события',
+            event_date: 'Дата и время',
             event_location: 'Место проведения',
-            price: 'Цена',
-            image_url: 'Ссылка на изображение'
+            price: 'Цена билета',
+            image_url: 'Изображение'
         };
         return names[field] || field;
     }
@@ -267,7 +419,7 @@ export class AdminEventManager {
         const edited = state.editedTicket;
 
         let message = '✅ <b>Подтвердите изменения:</b>\n\n';
-        message += `<b>Билет ID:</b> ${original.id}\n\n`;
+        message += `🆔 <b>ID мероприятия:</b> <code>${original.id}</code>\n\n`;
 
         const fields = ['title', 'description', 'event_date', 'event_location', 'price', 'image_url'];
         let hasChanges = false;
@@ -276,33 +428,41 @@ export class AdminEventManager {
             if (original[field] !== edited[field]) {
                 hasChanges = true;
                 message += `🔹 <b>${this.getFieldName(field)}:</b>\n` +
-                          `Было: ${original[field] || 'не указано'}\n` +
-                          `Стало: ${edited[field] || 'не указано'}\n\n`;
+                    `▫️ <i>Было:</i> ${original[field] || 'не указано'}\n` +
+                    `▫️ <i>Стало:</i> ${edited[field] || 'не указано'}\n\n`;
             }
         });
 
         if (!hasChanges) {
-            message += '⚠️ Вы не внесли никаких изменений';
+            message += '⚠️ <b>Вы не внесли никаких изменений</b>';
+        }
+
+        const keyboard = [
+            [
+                { text: '✅ Подтвердить', callback_data: 'edit_confirm' },
+                { text: '❌ Отменить', callback_data: 'edit_cancel' }
+            ]
+        ];
+
+        if (hasChanges) {
+            keyboard.push([
+                { text: '✏️ Продолжить редактирование', callback_data: 'edit_continue' }
+            ]);
         }
 
         await this.bot.sendMessage(chatId, message, {
             parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ Подтвердить', callback_data: 'edit_confirm' },
-                        { text: '❌ Отменить', callback_data: 'edit_cancel' }
-                    ],
-                    [
-                        { text: '🔄 Продолжить редактирование', callback_data: 'edit_continue' }
-                    ]
-                ]
-            }
+            reply_markup: { inline_keyboard: keyboard }
         });
     }
 
     async startDeleteTicket(chatId) {
-        await this.bot.sendMessage(chatId, 'Введите ID билета, который хотите удалить:');
+        await this.bot.sendMessage(
+            chatId,
+            '🗑️ <b>Удаление мероприятия</b>\n\n' +
+            'Введите ID мероприятия, которое хотите удалить:',
+            { parse_mode: 'HTML' }
+        );
         this.userStates[chatId] = {
             isAdminAction: true,
             step: 'selecting_ticket_for_delete'
@@ -311,14 +471,24 @@ export class AdminEventManager {
 
     async processDeleteTicket(chatId, ticketId) {
         try {
-            const result = await this.ticketService.deleteTicket(ticketId);
+            const result = await this.eventService.deleteTicket(ticketId);
             if (result) {
-                await this.bot.sendMessage(chatId, `✅ Билет с ID ${ticketId} успешно удален`);
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ <b>Мероприятие удалено</b>\n\n` +
+                    `ID: <code>${ticketId}</code>`,
+                    { parse_mode: 'HTML' }
+                );
                 await this.showMenu(chatId);
             }
         } catch (error) {
             console.error('Ошибка при удалении билета:', error);
-            await this.bot.sendMessage(chatId, `⚠️ Не удалось удалить билет с ID ${ticketId}`);
+            await this.bot.sendMessage(
+                chatId,
+                `⚠️ <b>Не удалось удалить мероприятие</b>\n\n` +
+                `ID: <code>${ticketId}</code>`,
+                { parse_mode: 'HTML' }
+            );
         }
     }
 }

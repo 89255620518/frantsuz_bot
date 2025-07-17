@@ -7,10 +7,8 @@ import {
 } from './mainMenu.js';
 import {
     showEventsList,
-    startTicketPurchase,
-    completeTicketPurchase,
-    handleTicketsCommand
-} from './ticketsHandler.js';
+    completeTicketPurchase
+} from './event/ticketsHandler.js';
 import { showContacts } from './contactsHandler.js';
 import { checkPaymentStatus } from '../../services/paykeeper.js';
 import { User } from '../../models/User.js';
@@ -20,7 +18,7 @@ export const setupEventHandlers = () => {
     setupAdminHandlers();
 
     bot.onText(/\/start/, handleStartCommand);
-    bot.onText(/\/tickets/, handleTicketsCommand);
+    bot.onText(/\/tickets/, showEventsList);
 
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;

@@ -3,10 +3,10 @@ import { userStates } from '../../../state.js';
 import { showMainMenu } from '../mainMenu.js';
 import { AdminEventManager } from './AdminEventManager.js';
 import { EventWizard } from './eventWizzard.js';
-import ticketService from '../../../services/ticketService.js';
+import EventService from '../../../services/eventsService.js';
 
-const eventManager = new AdminEventManager(bot, ticketService, userStates);
-const eventWizard = new EventWizard(bot, ticketService, userStates);
+const eventManager = new AdminEventManager(bot, EventService, userStates);
+const eventWizard = new EventWizard(bot, EventService, userStates);
 
 export const handleAdminMessages = async (msg) => {
     const chatId = msg.chat.id;
@@ -21,28 +21,35 @@ export const handleAdminMessages = async (msg) => {
     }
 
     try {
-        // Выбор билета для редактирования
         if (userState.step === 'selecting_ticket_for_edit') {
             const ticketId = parseInt(text);
             if (isNaN(ticketId)) {
-                return await bot.sendMessage(chatId, '❌ Пожалуйста, введите числовой ID билета');
+                return await bot.sendMessage(
+                    chatId,
+                    '❌ <b>Неверный ID мероприятия</b>\n' +
+                    'Пожалуйста, введите числовой ID',
+                    { parse_mode: 'HTML' }
+                );
             }
             await eventManager.processEditTicketSelection(chatId, ticketId);
             return;
         }
 
-        // Выбор билета для удаления
         if (userState.step === 'selecting_ticket_for_delete') {
             const ticketId = parseInt(text);
             if (isNaN(ticketId)) {
-                return await bot.sendMessage(chatId, '❌ Пожалуйста, введите числовой ID билета');
+                return await bot.sendMessage(
+                    chatId,
+                    '❌ <b>Неверный ID мероприятия</b>\n' +
+                    'Пожалуйста, введите числовой ID',
+                    { parse_mode: 'HTML' }
+                );
             }
             await eventManager.processDeleteTicket(chatId, ticketId);
             delete userStates[chatId];
             return;
         }
 
-        // Обработка шагов редактирования
         if (userState.step && userState.step.startsWith('edit_')) {
             await eventManager.processEditStep(chatId, text);
             return;
@@ -50,7 +57,12 @@ export const handleAdminMessages = async (msg) => {
 
     } catch (error) {
         console.error('Ошибка в обработчике администратора:', error);
-        await bot.sendMessage(chatId, '⚠️ Произошла ошибка при обработке запроса');
+        await bot.sendMessage(
+            chatId,
+            '⚠️ <b>Произошла ошибка</b>\n' +
+            'Попробуйте позже или обратитесь к разработчику',
+            { parse_mode: 'HTML' }
+        );
         delete userStates[chatId];
     }
 };
@@ -63,14 +75,12 @@ export const setupAdminHandlers = () => {
         const userState = userStates[chatId];
 
         try {
-            // Обработка кнопок редактирования
             if (userState?.isAdminAction && data.startsWith('edit_')) {
                 await eventManager.handleEditCallback(chatId, data);
                 await bot.answerCallbackQuery(callbackQuery.id);
                 return;
             }
 
-            // Основные команды
             switch (data) {
                 case 'admin_tickets':
                     await eventManager.showMenu(chatId);
@@ -99,8 +109,8 @@ export const setupAdminHandlers = () => {
 
                 default:
                     await bot.answerCallbackQuery(callbackQuery.id, {
-                        text: 'Неизвестная команда',
-                        show_alert: true
+                        text: '❌ Неизвестная команда',
+                        show_alert: false
                     });
                     return;
             }
