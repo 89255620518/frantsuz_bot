@@ -12,25 +12,26 @@ class UserTicket extends Model {
             foreignKey: 'ticket_id',
             as: 'ticket'
         });
+        this.hasOne(models.OrderItem, {
+            foreignKey: 'user_ticket_id',
+            as: 'order_item'
+        });
     }
 
-    // Генерация номера билета в формате Frantsuz-XXXXXXX (до 7 цифр)
     static generateTicketNumber() {
         const randomNumbers = Math.floor(Math.random() * 10000000)
             .toString()
             .padStart(7, '0');
-        return `Frantsuz-${randomNumbers}`;
+        return `Француз-${randomNumbers}`;
     }
 
-    // Генерация QR-кода
     static async generateQRCode(ticketNumber) {
         try {
-            const qrCodeDataURL = await QRCode.toDataURL(ticketNumber, {
+            return await QRCode.toDataURL(ticketNumber, {
                 width: 200,
                 margin: 1,
                 color: { dark: '#000', light: '#fff' }
             });
-            return qrCodeDataURL;
         } catch (err) {
             console.error('Ошибка генерации QR-кода:', err);
             return null;
@@ -45,7 +46,6 @@ const initUserTicket = (sequelize) => {
                 type: DataTypes.INTEGER,
                 autoIncrement: true,
                 primaryKey: true
-
             },
             user_id: { 
                 type: DataTypes.BIGINT,
@@ -85,6 +85,18 @@ const initUserTicket = (sequelize) => {
             used_at: {
                 type: DataTypes.DATE,
                 allowNull: true
+            },
+            payment_status: {
+                type: DataTypes.ENUM('pending', 'paid', 'failed', 'canceled'),
+                defaultValue: 'pending'
+            },
+            payment_id: {
+                type: DataTypes.STRING,
+                allowNull: true
+            },
+            expires_at: {
+                type: DataTypes.DATE,
+                allowNull: true
             }
         },
         {
@@ -103,13 +115,17 @@ const initUserTicket = (sequelize) => {
                     if (!userTicket.qr_code) {
                         userTicket.qr_code = await UserTicket.generateQRCode(userTicket.ticket_number);
                     }
+                    if (userTicket.payment_status === 'pending' && !userTicket.expires_at) {
+                        userTicket.expires_at = new Date(Date.now() + 30 * 60 * 1000); // 30 минут
+                    }
                 }
             },
             indexes: [
-                { fields: ['user_id'], name: 'user_tickets_user_id_idx' },
-                { fields: ['ticket_id'], name: 'user_tickets_ticket_id_idx' },
-                { fields: ['ticket_number'], unique: true, name: 'user_tickets_ticket_number_unique' },
-                { fields: ['user_id', 'ticket_id'], name: 'user_tickets_composite_idx' }
+                { fields: ['user_id'] },
+                { fields: ['ticket_id'] },
+                { fields: ['ticket_number'], unique: true },
+                { fields: ['payment_id'] },
+                { fields: ['expires_at'] }
             ]
         }
     );

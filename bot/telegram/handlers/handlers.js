@@ -1,24 +1,35 @@
-// eventHandlers.js
+// eventHandlers.js (полная версия с интеграцией "Подробнее")
 import { bot } from '../botInstance.js';
-import { userStates } from '../../state.js';
+import { userStates, userCarts, eventDetailsMessages } from '../../state.js';
 import {
     handleStartCommand,
     showMainMenu
 } from './mainMenu.js';
 import {
     showEventsList,
-    completeTicketPurchase
+    handleAddToCart,
+    handleQuantityChange,
+    showCart,
+    handleTicketMessages,
+    startCheckout,
+    showEventDetails,
+    backToEvent
 } from './event/ticketsHandler.js';
 import { showContacts } from './contactsHandler.js';
 import { checkPaymentStatus } from '../../services/paykeeper.js';
 import { User } from '../../models/User.js';
-import { handleAdminMessages, setupAdminHandlers, showAdminTicketsMenu } from './admin/adminHandlers.js';
+import {
+    handleAdminMessages,
+    setupAdminHandlers,
+    showAdminTicketsMenu
+} from './admin/adminHandlers.js';
 
 export const setupEventHandlers = () => {
     setupAdminHandlers();
 
     bot.onText(/\/start/, handleStartCommand);
     bot.onText(/\/tickets/, showEventsList);
+    bot.onText(/\/cart/, showCart);
 
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
@@ -27,6 +38,7 @@ export const setupEventHandlers = () => {
         const chatId = msg.chat.id;
         const data = callbackQuery.data;
         const user = callbackQuery.from;
+        const messageId = msg.message_id;
 
         try {
             if (!data) {
@@ -37,17 +49,41 @@ export const setupEventHandlers = () => {
             const dbUser = await User.findOne({ where: { telegram_id: user.id } });
             const isAdmin = dbUser?.is_admin || false;
 
-            if (data === 'contacts') {
+            // Обработка билетов
+            if (data.startsWith('event_details_')) {
+                const eventId = parseInt(data.split('_')[2]);
+                await showEventDetails(chatId, eventId, messageId);
+            }
+            else if (data.startsWith('back_to_event_')) {
+                const parts = data.split('_');
+                const eventId = parseInt(parts[3]);
+                const originalMessageId = parseInt(parts[4]);
+                await backToEvent(chatId, eventId, originalMessageId);
+            }
+            else if (data.startsWith('add_to_cart_')) {
+                const eventId = parseInt(data.split('_')[3]);
+                await handleAddToCart(chatId, eventId);
+            }
+            else if (data.startsWith('increase_')) {
+                const eventId = parseInt(data.split('_')[1]);
+                await handleQuantityChange(chatId, eventId, 'increase');
+            }
+            else if (data.startsWith('decrease_')) {
+                const eventId = parseInt(data.split('_')[1]);
+                await handleQuantityChange(chatId, eventId, 'decrease');
+            }
+            else if (data === 'view_cart') {
+                await showCart(chatId);
+            }
+            else if (data === 'checkout') {
+                await startCheckout(chatId);
+            }
+            // Остальные обработчики
+            else if (data === 'contacts') {
                 await showContacts(chatId);
             }
             else if (data === 'show_tickets') {
                 await showEventsList(chatId);
-            }
-            else if (data.startsWith('buy_ticket_')) {
-                const eventId = parseInt(data.split('_')[2]);
-                if (!isNaN(eventId)) {
-                    await startTicketPurchase(chatId, eventId, user?.id);
-                }
             }
             else if (data.startsWith('check_payment_')) {
                 const invoiceId = data.split('_')[2];
@@ -69,6 +105,17 @@ export const setupEventHandlers = () => {
             }
             else if (data === 'back_to_main') {
                 delete userStates[chatId];
+                if (eventDetailsMessages[chatId]) {
+                    // Удаляем все сообщения с деталями мероприятий
+                    for (const [eventId, detailsMsgId] of Object.entries(eventDetailsMessages[chatId])) {
+                        try {
+                            await bot.deleteMessage(chatId, detailsMsgId);
+                        } catch (e) {
+                            console.error('Ошибка при удалении сообщения с деталями:', e);
+                        }
+                    }
+                    delete eventDetailsMessages[chatId];
+                }
                 await showMainMenu(chatId, isAdmin);
             }
 
@@ -87,53 +134,13 @@ export const setupEventHandlers = () => {
 
         const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
 
-        // Добавляем вызов обработчика административных сообщений
+        // Обработка административных сообщений
         if (userState?.isAdminAction) {
             await handleAdminMessages(msg);
             return;
         }
 
-        if (!msg.text || msg.text.startsWith('/') || !userState) return;
-
-        try {
-            if (userState.step === 'name') {
-                const nameParts = msg.text.trim().split(/\s+/);
-                if (nameParts.length < 2) {
-                    return bot.sendMessage(chatId, '❌ Пожалуйста, введите имя и фамилию через пробел');
-                }
-
-                userState.name = msg.text;
-                userState.step = 'phone';
-                await bot.sendMessage(chatId, '📞 Введите ваш номер телефона в формате +7XXXXXXXXXX:', {
-                    reply_markup: { force_reply: true }
-                });
-            }
-            else if (userState.step === 'phone') {
-                const phoneRegex = /^(\+7|8)[0-9]{10}$/;
-                const cleanPhone = msg.text.replace(/[^\d+]/g, '');
-
-                if (!phoneRegex.test(cleanPhone)) {
-                    return bot.sendMessage(chatId, '❌ Неверный формат телефона. Введите в формате +7XXXXXXXXXX');
-                }
-
-                userState.phone = cleanPhone;
-                userState.step = 'email';
-                await bot.sendMessage(chatId, '📧 Введите ваш email (на него будет отправлен билет):', {
-                    reply_markup: { force_reply: true }
-                });
-            }
-            else if (userState.step === 'email') {
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailRegex.test(msg.text)) {
-                    return bot.sendMessage(chatId, '❌ Неверный формат email. Пожалуйста, введите корректный email');
-                }
-
-                userState.email = msg.text;
-                await completeTicketPurchase(chatId, userState);
-            }
-        } catch (error) {
-            console.error('Error in message handler:', error);
-            await bot.sendMessage(chatId, 'Произошла ошибка. Пожалуйста, попробуйте позже.');
-        }
+        // Обработка сообщений, связанных с билетами
+        await handleTicketMessages(msg);
     });
 };

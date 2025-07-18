@@ -75,6 +75,11 @@ export const setupAdminHandlers = () => {
         const userState = userStates[chatId];
 
         try {
+            if (!userState?.isAdminAction && !data.startsWith('admin_')) {
+                // Пропускаем обработку, не отвечаем на callback
+                return;
+            }
+            
             if (userState?.isAdminAction && data.startsWith('edit_')) {
                 await eventManager.handleEditCallback(chatId, data);
                 await bot.answerCallbackQuery(callbackQuery.id);

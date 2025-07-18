@@ -1,9 +1,9 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { bot } from '../telegram/botInstance.js';
 import { URLSearchParams } from 'url';
 import base64 from 'base-64';
 import { sendUserTicketEmail, sendAdminNotification } from './emailService.js';
+import TicketService from './ticketService.js'
 
 dotenv.config();
 
@@ -46,6 +46,9 @@ export const initializePaymentSystem = async () => {
 };
 
 export const processPayment = async (bot, chatId, ticketData) => {
+    if (!ticketData?.customer?.first_name || !ticketData?.customer?.last_name) {
+        throw new Error('Не указано имя или фамилия покупателя');
+    }
     try {
         const tokenResponse = await axios.post(
             `${PAYKEEPER_SERVER}/info/settings/token/`,
@@ -55,10 +58,11 @@ export const processPayment = async (bot, chatId, ticketData) => {
 
         const token = tokenResponse.data?.token;
         if (!token) throw new Error('Не получен токен от PayKeeper');
+        const customerName = `${ticketData.customer.first_name} ${ticketData.customer.last_name}`.trim();
 
         const paymentParams = new URLSearchParams();
         paymentParams.append('pay_amount', ticketData.price);
-        paymentParams.append('clientid', ticketData.customer.name.substring(0, 100));
+        paymentParams.append('clientid', customerName.substring(0, 100));
         paymentParams.append('orderid', ticketData.number);
         paymentParams.append('service_name', `Билет: ${ticketData.event.title}`.substring(0, 100));
         paymentParams.append('client_email', ticketData.customer.email);
@@ -77,7 +81,7 @@ export const processPayment = async (bot, chatId, ticketData) => {
         if (!invoiceId) throw new Error('Не получен ID счета');
 
         const paymentUrl = `${PAYKEEPER_SERVER}/bill/${invoiceId}/`;
-
+        
         await bot.sendMessage(
             chatId,
             `🎟️ *Билет №${ticketData.number}*\n\n` +
@@ -139,6 +143,8 @@ export const checkPaymentStatus = async (bot, chatId, invoiceId) => {
                 price: userState.eventData.price,
                 invoiceId: invoiceId
             };
+
+            await TicketService.confirmPayment(invoiceId);
 
             // Отправка email пользователю
             await sendUserTicketEmail(userState.email, ticketData);
