@@ -8,12 +8,36 @@ class TicketService {
      */
     static async createPendingTicket(userId, ticketId) {
         try {
+            // Сначала очистим старые просроченные билеты этого пользователя
+            await UserTicket.destroy({
+                where: {
+                    user_id: userId,
+                    payment_status: 'pending',
+                    created_at: {
+                        [Op.lt]: new Date(Date.now() - 5 * 60 * 1000)
+                    }
+                }
+            });
+
             const ticket = await UserTicket.create({
                 user_id: userId,
                 ticket_id: ticketId,
                 payment_status: 'pending',
-                expires_at: new Date(Date.now() + 30 * 60 * 1000) // 30 минут
+                expires_at: new Date(Date.now() + 5 * 60 * 1000)
             });
+
+            setTimeout(async () => {
+                try {
+                    const freshTicket = await UserTicket.findByPk(ticket.id);
+                    if (freshTicket && freshTicket.payment_status === 'pending') {
+                        await freshTicket.update({ payment_status: 'canceled' });
+                        await freshTicket.destroy();
+                        console.log(`Билет ${ticket.id} автоматически удален (не оплачен в течение 5 минут)`);
+                    }
+                } catch (error) {
+                    console.error('Ошибка при автоматическом удалении билета:', error);
+                }
+            }, 5 * 60 * 1000);
 
             return ticket;
         } catch (error) {
@@ -22,17 +46,32 @@ class TicketService {
         }
     }
 
-    /**
-     * Подтверждает оплату билета
-     */
+    static async updatePaymentId(ticketId, paymentId) {
+        try {
+            const ticket = await UserTicket.findByPk(ticketId);
+            if (!ticket) {
+                throw new Error('Билет не найден');
+            }
+
+            await ticket.update({
+                payment_id: paymentId
+            });
+
+            return ticket;
+        } catch (error) {
+            console.error('Ошибка при обновлении payment_id:', error);
+            throw error;
+        }
+    }
+
     static async confirmPayment(paymentId) {
         try {
             const paymentIdStr = String(paymentId);
 
-            const ticket = await UserTicket.findOne({ 
-                where: { payment_id: paymentIdStr } 
+            const ticket = await UserTicket.findOne({
+                where: { payment_id: paymentIdStr }
             });
-            
+
             if (!ticket) {
                 throw new Error('Билет не найден');
             }
@@ -46,6 +85,70 @@ class TicketService {
             return updatedTicket;
         } catch (error) {
             console.error('Ошибка при подтверждении оплаты:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Отменяет просроченные pending билеты (старше 5 минут)
+     */
+    static async cancelExpiredPendingTickets() {
+        try {
+            const expirationTime = new Date(Date.now() - 5 * 60 * 1000);
+            
+            const [affectedCount] = await UserTicket.update(
+                { payment_status: 'canceled' },
+                {
+                    where: {
+                        payment_status: 'pending',
+                        created_at: {
+                            [Op.lt]: expirationTime
+                        }
+                    }
+                }
+            );
+
+            console.log(`Отменено ${affectedCount} просроченных билетов`);
+            return affectedCount;
+        } catch (error) {
+            console.error('Ошибка при отмене просроченных билетов:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Удаляет все билеты со статусом 'canceled'
+     */
+    static async removeCanceledTickets() {
+        try {
+            const result = await UserTicket.destroy({
+                where: {
+                    payment_status: 'canceled'
+                }
+            });
+
+            console.log(`Удалено ${result} билетов со статусом canceled`);
+            return result;
+        } catch (error) {
+            console.error('Ошибка при удалении canceled билетов:', error);
+            throw new Error('Не удалось удалить canceled билеты');
+        }
+    }
+
+    /**
+     * Автоматическая очистка билетов (отмена просроченных + удаление canceled)
+     */
+    static async performAutoCleanup() {
+        try {
+            const canceledCount = await this.cancelExpiredPendingTickets();
+            const deletedCount = await this.removeCanceledTickets();
+            
+            return {
+                canceled: canceledCount,
+                deleted: deletedCount
+            };
+        } catch (error) {
+            console.error('Ошибка при автоматической очистке билетов:', error);
             throw error;
         }
     }
@@ -159,11 +262,11 @@ class TicketService {
     static async getTicketsStatistics() {
         try {
             const totalTickets = await UserTicket.count();
-            const usedTickets = await UserTicket.count({ 
-                where: { 
+            const usedTickets = await UserTicket.count({
+                where: {
                     is_used: true,
                     payment_status: 'paid'
-                } 
+                }
             });
             const activeTickets = await UserTicket.count({
                 where: {
@@ -176,12 +279,18 @@ class TicketService {
                     payment_status: 'pending'
                 }
             });
+            const canceledTickets = await UserTicket.count({
+                where: {
+                    payment_status: 'canceled'
+                }
+            });
 
             return {
                 total: totalTickets,
                 used: usedTickets,
                 active: activeTickets,
                 pending: pendingTickets,
+                canceled: canceledTickets,
                 usedPercentage: totalTickets > 0 ? Math.round((usedTickets / totalTickets) * 100) : 0
             };
         } catch (error) {
@@ -191,17 +300,16 @@ class TicketService {
     }
 
     /**
-     * Обновляет данные билета (для администратора)
+     * Обновляет данные билета
      */
     static async updateTicket(ticketId, updateData) {
         try {
             const ticket = await UserTicket.findByPk(ticketId);
-            
+
             if (!ticket) {
                 throw new Error('Билет не найден');
             }
 
-            // Разрешенные поля для обновления
             const allowedFields = ['is_used', 'used_at', 'ticket_number', 'payment_status'];
             Object.keys(updateData).forEach(key => {
                 if (allowedFields.includes(key)) {
@@ -209,7 +317,6 @@ class TicketService {
                 }
             });
 
-            // Если обновляется номер билета - генерируем новый QR-код
             if (updateData.ticket_number) {
                 ticket.qr_code = await QRCode.toDataURL(updateData.ticket_number, {
                     width: 200,
@@ -231,11 +338,11 @@ class TicketService {
             const result = await UserTicket.destroy({
                 where: { id: ticketId }
             });
-            
+
             if (result === 0) {
                 throw new Error('Билет не найден');
             }
-            
+
             return true;
         } catch (error) {
             console.error('Ошибка при удалении билета:', error);
@@ -243,11 +350,6 @@ class TicketService {
         }
     }
 
-    /**
-     * Удаляет все билеты пользователя
-     * @param {number} userId - ID пользователя в Telegram
-     * @returns {Promise<number>} - Количество удаленных билетов
-     */
     static async deleteAllUserTickets(userId) {
         try {
             return await UserTicket.destroy({
@@ -259,11 +361,6 @@ class TicketService {
         }
     }
 
-    /**
-     * Удаляет все билеты мероприятия
-     * @param {number} eventId - ID мероприятия
-     * @returns {Promise<number>} - Количество удаленных билетов
-     */
     static async deleteAllEventTickets(eventId) {
         try {
             return await UserTicket.destroy({
@@ -275,19 +372,29 @@ class TicketService {
         }
     }
 
-    /**
-     * Удаляет ВСЕ билеты из системы (только для админа)
-     * @returns {Promise<number>} - Количество удаленных билетов
-     */
     static async deleteAllTickets() {
         try {
             return await UserTicket.destroy({
                 where: {},
-                truncate: true // Полная очистка таблицы
+                truncate: true
             });
         } catch (error) {
             console.error('Ошибка при удалении всех билетов:', error);
             throw new Error('Не удалось удалить все билеты');
+        }
+    }
+
+    /**
+     * Получает количество билетов со статусом canceled
+     */
+    static async getCanceledTicketsCount() {
+        try {
+            return await UserTicket.count({
+                where: { payment_status: 'canceled' }
+            });
+        } catch (error) {
+            console.error('Ошибка при получении количества canceled билетов:', error);
+            throw error;
         }
     }
 }

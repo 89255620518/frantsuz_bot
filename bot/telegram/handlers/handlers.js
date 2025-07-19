@@ -1,4 +1,3 @@
-// eventHandlers.js (полная версия с интеграцией "Подробнее")
 import { bot } from '../botInstance.js';
 import { userStates, userCarts, eventDetailsMessages } from '../../state.js';
 import {
@@ -16,7 +15,7 @@ import {
     backToEvent
 } from './event/ticketsHandler.js';
 import { showContacts } from './contactsHandler.js';
-import { checkPaymentStatus } from '../../services/paykeeper.js';
+import PaymentService from '../../services/paykeeper.js';
 import { User } from '../../models/User.js';
 import {
     handleAdminMessages,
@@ -49,7 +48,7 @@ export const setupEventHandlers = () => {
             const dbUser = await User.findOne({ where: { telegram_id: user.id } });
             const isAdmin = dbUser?.is_admin || false;
 
-            // Обработка билетов
+            // Обработка событий
             if (data.startsWith('event_details_')) {
                 const eventId = parseInt(data.split('_')[2]);
                 await showEventDetails(chatId, eventId, messageId);
@@ -78,18 +77,87 @@ export const setupEventHandlers = () => {
             else if (data === 'checkout') {
                 await startCheckout(chatId);
             }
+            // Обработка платежей
+            else if (data.startsWith('check_payment_')) {
+                const invoiceId = data.replace('check_payment_', '');
+                
+                try {
+                    // Сначала проверяем статус билета
+                    const ticket = await TicketService.getTicketByPaymentId(invoiceId);
+                    
+                    if (!ticket) {
+                        throw new Error('Билет не найден');
+                    }
+                    
+                    // Если билет уже отменен
+                    if (ticket.payment_status === 'cancelled') {
+                        await bot.sendMessage(
+                            chatId,
+                            '⌛ *Время на оплату истекло*\n\n' +
+                            'Вы не успели оплатить билет в течение 5 минут.\n' +
+                            'Пожалуйста, начните процесс покупки заново.',
+                            { parse_mode: 'Markdown' }
+                        );
+                        return;
+                    }
+
+                    // Проверяем статус оплаты
+                    const isPaid = await PaymentService.checkPaymentStatus(invoiceId);
+                    
+                    if (isPaid) {
+                        const user = await User.findOne({ where: { telegram_id: chatId } });
+                        if (!user) throw new Error('Пользователь не найден');
+
+                        const result = await PaymentService.handleSuccessfulPayment(invoiceId, {
+                            first_name: user.first_name,
+                            last_name: user.last_name,
+                            phone: user.phone,
+                            email: user.email
+                        });
+
+                        if (result.success) {
+                            await bot.sendMessage(
+                                chatId,
+                                '✅ *Оплата подтверждена!*\n\n' +
+                                'Ваши билеты были отправлены на email. ' +
+                                'Если вы не получили письмо, проверьте папку "Спам".\n\n' +
+                                'При возникновении вопросов звоните:\n' +
+                                '📞 +7(968)090-55-50',
+                                { parse_mode: 'Markdown' }
+                            );
+                        } else {
+                            throw new Error(result.error);
+                        }
+                    } else {
+                        // Рассчитываем оставшееся время
+                        const createdTime = new Date(ticket.created_at).getTime();
+                        const remainingTime = Math.ceil((createdTime + 5*60*1000 - Date.now()) / (60*1000));
+                        
+                        await bot.sendMessage(
+                            chatId,
+                            `⚠️ *Оплата еще не поступила*\n\n` +
+                            `У вас осталось ${remainingTime} минут для оплаты.\n\n` +
+                            'Если вы уже оплатили, подождите несколько минут и проверьте снова.',
+                            { parse_mode: 'Markdown' }
+                        );
+                    }
+                } catch (error) {
+                    console.error('Ошибка проверки платежа:', error);
+                    await bot.sendMessage(
+                        chatId,
+                        '❌ *Ошибка при проверке платежа*\n\n' +
+                        'Пожалуйста, попробуйте позже или обратитесь в поддержку:\n' +
+                        '📞 +7(968)090-55-50',
+                        { parse_mode: 'Markdown' }
+                    );
+                }
+            }
             // Остальные обработчики
             else if (data === 'contacts') {
                 await showContacts(chatId);
             }
             else if (data === 'show_tickets') {
                 await showEventsList(chatId);
-            }
-            else if (data.startsWith('check_payment_')) {
-                const invoiceId = data.split('_')[2];
-                if (invoiceId) {
-                    await checkPaymentStatus(bot, chatId, invoiceId);
-                }
             }
             else if (data === 'cancel_payment') {
                 delete userStates[chatId];

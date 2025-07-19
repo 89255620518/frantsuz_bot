@@ -3,19 +3,9 @@ import TicketService from '../../../services/ticketService.js';
 import OrderService from '../../../services/orderService.js';
 import { User } from '../../../models/User.js';
 import { bot } from '../../botInstance.js';
-import { processPayment } from '../../../services/paykeeper.js';
+import PaymentService from '../../../services/paykeeper.js';
 import { userStates, userCarts, eventDetailsMessages, eventMessages } from '../../../state.js';
 
-
-// Хранилище состояний
-// const userCarts = {};
-// const eventMessages = {};
-// const userStates = {};
-// const eventDetailsMessages = {};
-
-// ====================== ОСНОВНЫЕ ФУНКЦИИ ======================
-
-// Обновление сообщения с мероприятием
 export const updateEventMessage = async (chatId, event, quantity) => {
     try {
         const messageId = eventMessages[chatId]?.[event.id];
@@ -477,86 +467,96 @@ export const completeCheckout = async (chatId, userData) => {
     try {
         const { first_name, last_name, phone, email, cartItems } = userData;
 
-        if (!first_name || !last_name || !phone || !email || !cartItems || cartItems.length === 0) {
-            return bot.sendMessage(chatId, '❌ Недостаточно данных для оформления заказа');
+        // Валидация данных
+        if (!first_name || !last_name || !phone || !email || !cartItems?.length) {
+            throw new Error('Недостаточно данных для оформления');
         }
 
+        // Обновляем данные пользователя
         const user = await User.findOne({ where: { telegram_id: chatId } });
-        if (!user) {
-            return bot.sendMessage(chatId, '❌ Пользователь не найден');
-        }
-
+        if (!user) throw new Error('Пользователь не найден');
         await user.update({ first_name, last_name, phone, email });
 
+        // Подготавливаем данные для платежа
         const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         
-        const paymentData = {
-            customer: {
-                first_name,
-                last_name,
-                phone,
-                email
-            },
+        const paymentResult = await PaymentService.createInvoice({
+            userId: chatId,
+            eventId: cartItems[0].eventId,
+            price: totalAmount,
+            customer: { first_name, last_name, phone, email },
             event: {
                 title: cartItems[0].title,
-                date: new Date(cartItems[0].event_date).toLocaleDateString('ru-RU'),
+                date: cartItems[0].event_date,
                 location: cartItems[0].event_location
-            },
-            price: totalAmount,
-            number: `ORDER-${Date.now()}`,
-            ticketIds: cartItems.flatMap(item => item.ticketIds)
-        };
-
-        const paymentResult = await processPayment(bot, chatId, paymentData);
-
-        if (paymentResult.success) {
-            const ticketsData = cartItems.map(item => ({
-                id: item.ticketIds[0],
-                price: item.price,
-                quantity: item.quantity
-            }));
-
-            await OrderService.createOrder(
-                { 
-                    telegram_id: chatId,
-                    first_name,
-                    last_name,
-                    email,
-                    phone 
-                },
-                ticketsData,
-                {
-                    id: paymentResult.invoiceId,
-                    method: 'paykeeper'
-                }
-            );
-
-            for (const item of cartItems) {
-                for (const ticketId of item.ticketIds) {
-                    await TicketService.confirmPayment(ticketId);
-                }
             }
+        });
 
-            delete userCarts[chatId];
-            delete userStates[chatId];
-
-            await bot.sendMessage(
-                chatId,
-                `✅ Заказ успешно оформлен!\n\n` +
-                `Сумма: ${totalAmount} руб.\n` +
-                `Номер заказа: ${paymentResult.invoiceId}\n\n` +
-                `Билеты будут отправлены на email: ${email}`
-            );
-        } else {
-            await bot.sendMessage(
-                chatId,
-                '❌ Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже.'
-            );
+        if (!paymentResult.success) {
+            throw new Error(paymentResult.error || 'Ошибка при создании платежа');
         }
 
+        // Создаем заказ
+        const order = await OrderService.createOrder(
+            { telegram_id: chatId, first_name, last_name, phone, email },
+            cartItems.map(item => ({
+                id: item.ticketIds[0],
+                price: item.price,
+                quantity: item.quantity,
+                event: {
+                    title: item.title,
+                    event_date: item.event_date,
+                    event_location: item.event_location
+                }
+            })),
+            {
+                id: paymentResult.invoiceId,
+                method: 'paykeeper'
+            }
+        );
+
+        // Очищаем корзину
+        delete userCarts[chatId];
+        delete userStates[chatId];
+
+        // Отправляем сообщение с подтверждением
+        await bot.sendMessage(
+            chatId,
+            `✅ *Заказ успешно оформлен!*\n\n` +
+            `📦 Номер заказа: ${order.id}\n` +
+            `💰 Сумма: ${totalAmount} руб.\n` +
+            `📧 Билеты отправлены на: ${email}\n\n` +
+            `Для оплаты нажмите кнопку ниже:`,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '💳 Оплатить', url: paymentResult.paymentUrl }],
+                        [{ text: '🔄 Проверить оплату', callback_data: `check_payment_${paymentResult.invoiceId}` }]
+                    ]
+                }
+            }
+        );
+
     } catch (error) {
-        console.error('Ошибка при оформлении заказа:', error);
-        await bot.sendMessage(chatId, '❌ Произошла ошибка при оформлении заказа.');
+        console.error('Ошибка оформления заказа:', error);
+        
+        // Отменяем все временные билеты в случае ошибки
+        if (userData?.cartItems) {
+            for (const item of userData.cartItems) {
+                for (const ticketId of item.ticketIds) {
+                    await TicketService.cancelPendingTicket(ticketId).catch(console.error);
+                }
+            }
+        }
+
+        await bot.sendMessage(
+            chatId,
+            '❌ *Ошибка при оформлении заказа*\n\n' +
+            'Пожалуйста, попробуйте позже или обратитесь в поддержку:\n' +
+            '📞 +7(968)090-55-50',
+            { parse_mode: 'Markdown' }
+        );
     }
 };
 
