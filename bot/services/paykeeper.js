@@ -12,7 +12,7 @@ class PaymentService {
         this.PAYKEEPER_USER = process.env.PAYKEEPER_USER;
         this.PAYKEEPER_PASSWORD = process.env.PAYKEEPER_PASSWORD;
         this.PAYKEEPER_SERVER = process.env.PAYKEEPER_SERVER?.replace(/\/$/, '');
-        
+
         this.validateConfig();
         this.initHeaders();
     }
@@ -62,26 +62,19 @@ class PaymentService {
             const token = tokenResponse.data?.token;
             if (!token) throw new Error('Failed to get token from PayKeeper');
 
-            // 2. Создаем временный билет в системе
-            const pendingTicket = await TicketService.createPendingTicket(
-                ticketData.userId,
-                ticketData.eventId,
-                null // Пока без invoiceId, обновим после создания
-            );
-
             // 3. Формируем данные для счета
             const customerName = `${ticketData.customer.first_name} ${ticketData.customer.last_name}`.trim();
             const paymentParams = new URLSearchParams();
-            
+
             paymentParams.append('pay_amount', ticketData.price);
             paymentParams.append('clientid', customerName.substring(0, 100));
-            paymentParams.append('orderid', pendingTicket.id); // Используем ID билета как orderid
+            paymentParams.append('orderid', ticketData.id); // Используем ID билета как orderid
             paymentParams.append('service_name', `Билет: ${ticketData.event.title}`.substring(0, 100));
             paymentParams.append('client_email', ticketData.customer.email);
             paymentParams.append('client_phone', ticketData.customer.phone);
             paymentParams.append('token', token);
             paymentParams.append('payment_currency', 'RUB');
-            paymentParams.append('payment_details', `Билет №${pendingTicket.id}`);
+            paymentParams.append('payment_details', `Билет №${ticketData.id}`);
 
             // 4. Создаем счет в PayKeeper
             const invoiceResponse = await axios.post(
@@ -93,14 +86,11 @@ class PaymentService {
             const invoiceId = invoiceResponse.data?.invoice_id;
             if (!invoiceId) throw new Error('Failed to get invoice ID');
 
-            // 5. Обновляем билет с invoiceId
-            await TicketService.updatePaymentId(pendingTicket.id, invoiceId);
-
             return {
                 success: true,
-                invoiceId,
+                paymentId: invoiceId,
                 paymentUrl: `${this.PAYKEEPER_SERVER}/bill/${invoiceId}/`,
-                ticketId: pendingTicket.id
+                ticketId: ticketData.id
             };
 
         } catch (error) {
@@ -130,7 +120,7 @@ class PaymentService {
         try {
             // 1. Подтверждаем оплату в TicketService
             const ticket = await TicketService.confirmPayment(invoiceId);
-            
+
             if (!ticket) {
                 throw new Error('Ticket not found for this payment');
             }

@@ -1,22 +1,28 @@
 import { bot } from '../botInstance.js';
 import { userStates, userCarts, eventDetailsMessages } from '../../state.js';
-import {
-    handleStartCommand,
-    showMainMenu
-} from './mainMenu.js';
+import { User } from '../../models/User.js';
+import PaymentService from '../../services/paykeeper.js';
+import TicketService from '../../services/ticketService.js';
+import { refundRules } from '../rules/refundRules.js';
+import { payRules } from '../rules/payRules.js';
+import { pay } from '../rules/pay.js';
+
+// Импорт обработчиков через контроллер
+import menuController from './mainMenu.js';
 import {
     showEventsList,
     handleAddToCart,
     handleQuantityChange,
     showCart,
+    clearCart,
+    showEditableCart,
+    handleRemoveFromCart,
     handleTicketMessages,
     startCheckout,
     showEventDetails,
-    backToEvent
+    backToEvent,
 } from './event/ticketsHandler.js';
 import { showContacts } from './contactsHandler.js';
-import PaymentService from '../../services/paykeeper.js';
-import { User } from '../../models/User.js';
 import {
     handleAdminMessages,
     setupAdminHandlers,
@@ -24,12 +30,31 @@ import {
 } from './admin/adminHandlers.js';
 
 export const setupEventHandlers = () => {
+    // Инициализация команд бота
+    menuController.setupBotCommands();
     setupAdminHandlers();
 
-    bot.onText(/\/start/, handleStartCommand);
+    // Обработка текстовых команд
+    bot.onText(/\/start/, menuController.handleStartCommand);
     bot.onText(/\/tickets/, showEventsList);
     bot.onText(/\/cart/, showCart);
+    bot.onText(/\/refund/, async (msg) => {
+        const chatId = msg.chat.id;
+        const user = await User.findOne({ where: { telegram_id: chatId } });
+        await refundRules.sendRefundRules(chatId, bot);
+    });
+    bot.onText(/\/pay_rules/, async (msg) => {
+        const chatId = msg.chat.id;
+        const user = await User.findOne({ where: { telegram_id: chatId } });
+        await payRules.sendPayRules(chatId, bot);
+    });
+    bot.onText(/\/pay/, async (msg) => {
+        const chatId = msg.chat.id;
+        const user = await User.findOne({ where: { telegram_id: chatId } });
+        await pay.sendPay(chatId, bot);
+    });
 
+    // Обработка callback-запросов
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         if (!msg?.chat?.id) return;
@@ -49,166 +74,149 @@ export const setupEventHandlers = () => {
             const isAdmin = dbUser?.is_admin || false;
 
             // Обработка событий
-            if (data.startsWith('event_details_')) {
-                const eventId = parseInt(data.split('_')[2]);
-                await showEventDetails(chatId, eventId, messageId);
-            }
-            else if (data.startsWith('back_to_event_')) {
-                const parts = data.split('_');
-                const eventId = parseInt(parts[3]);
-                const originalMessageId = parseInt(parts[4]);
-                await backToEvent(chatId, eventId, originalMessageId);
-            }
-            else if (data.startsWith('add_to_cart_')) {
-                const eventId = parseInt(data.split('_')[3]);
-                await handleAddToCart(chatId, eventId);
-            }
-            else if (data.startsWith('increase_')) {
-                const eventId = parseInt(data.split('_')[1]);
-                await handleQuantityChange(chatId, eventId, 'increase');
-            }
-            else if (data.startsWith('decrease_')) {
-                const eventId = parseInt(data.split('_')[1]);
-                await handleQuantityChange(chatId, eventId, 'decrease');
-            }
-            else if (data === 'view_cart') {
-                await showCart(chatId);
-            }
-            else if (data === 'checkout') {
-                await startCheckout(chatId);
-            }
-            // Обработка платежей
-            else if (data.startsWith('check_payment_')) {
-                const invoiceId = data.replace('check_payment_', '');
-                
-                try {
-                    // Сначала проверяем статус билета
-                    const ticket = await TicketService.getTicketByPaymentId(invoiceId);
-                    
-                    if (!ticket) {
-                        throw new Error('Билет не найден');
-                    }
-                    
-                    // Если билет уже отменен
-                    if (ticket.payment_status === 'cancelled') {
-                        await bot.sendMessage(
-                            chatId,
-                            '⌛ *Время на оплату истекло*\n\n' +
-                            'Вы не успели оплатить билет в течение 5 минут.\n' +
-                            'Пожалуйста, начните процесс покупки заново.',
-                            { parse_mode: 'Markdown' }
-                        );
-                        return;
-                    }
+            switch (true) {
+                case data.startsWith('event_details_'):
+                    const eventId = parseInt(data.split('_')[2]);
+                    await showEventDetails(chatId, eventId, messageId);
+                    break;
 
-                    // Проверяем статус оплаты
-                    const isPaid = await PaymentService.checkPaymentStatus(invoiceId);
-                    
-                    if (isPaid) {
-                        const user = await User.findOne({ where: { telegram_id: chatId } });
-                        if (!user) throw new Error('Пользователь не найден');
+                case data.startsWith('back_to_event_'):
+                    const parts = data.split('_');
+                    const backEventId = parseInt(parts[3]);
+                    const originalMessageId = parseInt(parts[4]);
+                    await backToEvent(chatId, backEventId, originalMessageId);
+                    break;
 
-                        const result = await PaymentService.handleSuccessfulPayment(invoiceId, {
-                            first_name: user.first_name,
-                            last_name: user.last_name,
-                            phone: user.phone,
-                            email: user.email
-                        });
+                case data.startsWith('add_to_cart_'):
+                    const cartEventId = parseInt(data.split('_')[3]);
+                    await handleAddToCart(chatId, cartEventId);
+                    await bot.answerCallbackQuery(callbackQuery.id, { text: 'Добавлено в корзину' });
+                    break;
 
-                        if (result.success) {
-                            await bot.sendMessage(
-                                chatId,
-                                '✅ *Оплата подтверждена!*\n\n' +
-                                'Ваши билеты были отправлены на email. ' +
-                                'Если вы не получили письмо, проверьте папку "Спам".\n\n' +
-                                'При возникновении вопросов звоните:\n' +
-                                '📞 +7(968)090-55-50',
-                                { parse_mode: 'Markdown' }
-                            );
-                        } else {
-                            throw new Error(result.error);
-                        }
-                    } else {
-                        // Рассчитываем оставшееся время
-                        const createdTime = new Date(ticket.created_at).getTime();
-                        const remainingTime = Math.ceil((createdTime + 5*60*1000 - Date.now()) / (60*1000));
-                        
-                        await bot.sendMessage(
-                            chatId,
-                            `⚠️ *Оплата еще не поступила*\n\n` +
-                            `У вас осталось ${remainingTime} минут для оплаты.\n\n` +
-                            'Если вы уже оплатили, подождите несколько минут и проверьте снова.',
-                            { parse_mode: 'Markdown' }
-                        );
-                    }
-                } catch (error) {
-                    console.error('Ошибка проверки платежа:', error);
+                case data.startsWith('increase_'):
+                    const incEventId = parseInt(data.split('_')[1]);
+                    await handleQuantityChange(chatId, incEventId, 'increase');
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data.startsWith('decrease_'):
+                    const decEventId = parseInt(data.split('_')[1]);
+                    await handleQuantityChange(chatId, decEventId, 'decrease');
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data === 'view_cart':
+                    await showCart(chatId);
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data === 'checkout':
+                    await startCheckout(chatId);
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data.startsWith('check_payment_'):
+                    await handlePaymentCheck(chatId, data.replace('check_payment_', ''));
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data === 'contacts':
+                    await showContacts(chatId);
+                    break;
+
+                case data === 'show_tickets':
+                    await showEventsList(chatId);
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data === 'clear_cart':
+                    await clearCart(chatId);
+                    await bot.answerCallbackQuery(callbackQuery.id, { text: 'Корзина очищена' });
+                    break;
+
+                case data === 'edit_cart':
+                    await showEditableCart(chatId);
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    break;
+
+                case data.startsWith('remove_from_cart_'):
+                    const removeEventId = parseInt(data.split('_')[3]);
+                    await handleRemoveFromCart(chatId, removeEventId);
+                    await bot.answerCallbackQuery(callbackQuery.id, { text: 'Удалено из корзины' });
+                    break;
+
+                case data === 'cancel_payment':
+                    await handlePaymentCancel(chatId, isAdmin);
+                    break;
+
+                case data === 'admin_tickets' && isAdmin:
+                    await showAdminTicketsMenu(chatId);
+                    break;
+
+                case data === 'back_to_main':
+                    await handleBackToMain(chatId, isAdmin);
+                    break;
+
+                case data === 'refund':
+                    await refundRules.sendRefundRules(chatId, bot);
+                    break;
+
+                case data === 'pay_rules':
+                    await payRules.sendPayRules(chatId, bot);
+                    break;
+                case data === 'pay':
+                    await pay.sendPay(chatId, bot);
+                    break;
+
+                case data === 'consult_refund':
                     await bot.sendMessage(
                         chatId,
-                        '❌ *Ошибка при проверке платежа*\n\n' +
-                        'Пожалуйста, попробуйте позже или обратитесь в поддержку:\n' +
-                        '📞 +7(968)090-55-50',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-            }
-            // Остальные обработчики
-            else if (data === 'contacts') {
-                await showContacts(chatId);
-            }
-            else if (data === 'show_tickets') {
-                await showEventsList(chatId);
-            }
-            else if (data === 'cancel_payment') {
-                delete userStates[chatId];
-                await bot.sendMessage(
-                    chatId,
-                    '💔 *Очень жаль, что вы не оформили билет!*\n\nВозможно, вы передумаете? Мы будем рады видеть вас!',
-                    { parse_mode: 'Markdown' }
-                );
-                setTimeout(() => showMainMenu(chatId, isAdmin), 3000);
-            }
-            else if (data === 'admin_tickets' && isAdmin) {
-                await showAdminTicketsMenu(chatId);
-            }
-            else if (data === 'back_to_main') {
-                delete userStates[chatId];
-                if (eventDetailsMessages[chatId]) {
-                    // Удаляем все сообщения с деталями мероприятий
-                    for (const [eventId, detailsMsgId] of Object.entries(eventDetailsMessages[chatId])) {
-                        try {
-                            await bot.deleteMessage(chatId, detailsMsgId);
-                        } catch (e) {
-                            console.error('Ошибка при удалении сообщения с деталями:', e);
+                        '📞 Для консультации по возвратам свяжитесь с нашим менеджером:\n\n' +
+                        '• Телефон: +7(968)090-55-50\n' +
+                        '• Email: refund@french-club.ru\n\n' +
+                        'Мы работаем ежедневно с 12:00 до 23:00',
+                        {
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '🔙 К правилам возврата', callback_data: 'refund' }],
+                                    [{ text: '🛎️ В главное меню', callback_data: 'back_to_main' }]
+                                ]
+                            }
                         }
-                    }
-                    delete eventDetailsMessages[chatId];
-                }
-                await showMainMenu(chatId, isAdmin);
-            }
+                    );
+                    break;
 
-            await bot.answerCallbackQuery(callbackQuery.id);
+                default:
+                    await bot.answerCallbackQuery(callbackQuery.id);
+                    return;
+            }
         } catch (error) {
             console.error('Error in callback:', error);
-            await bot.sendMessage(chatId, 'Произошла ошибка. Пожалуйста, попробуйте позже.');
+            await handleError(chatId, error);
         }
     });
 
+    // Обработка обычных сообщений
     bot.on('message', async (msg) => {
         if (!msg?.chat?.id) return;
 
         const chatId = msg.chat.id;
         const userState = userStates[chatId];
 
-        const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
+        try {
+            const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
 
-        // Обработка административных сообщений
-        if (userState?.isAdminAction) {
-            await handleAdminMessages(msg);
-            return;
+            // Обработка административных сообщений
+            if (userState?.isAdminAction) {
+                await handleAdminMessages(msg);
+                return;
+            }
+
+            // Обработка сообщений, связанных с билетами
+            await handleTicketMessages(msg);
+        } catch (error) {
+            console.error('Error in message handler:', error);
+            await handleError(chatId, error);
         }
-
-        // Обработка сообщений, связанных с билетами
-        await handleTicketMessages(msg);
     });
 };

@@ -10,6 +10,9 @@ export const setupCommands = (bot) => {
         { command: '/playstation', description: 'Игровые приставки' },
         { command: '/games', description: 'Настольные игры' },
         { command: '/events', description: 'Афиша мероприятий' },
+        { command: '/pay', description: 'Оплата' },
+        { command: '/payRull', description: 'Правила оплата' },
+        { command: '/refund', description: 'Правила возврата' },
         { command: '/reserve', description: 'Бронирование' },
         { command: '/contacts', description: 'Контакты' }
     ]).then(() => console.log('Командное меню установлено'))

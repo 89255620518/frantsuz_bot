@@ -1,6 +1,6 @@
 import { bot } from '../../botInstance.js';
 import { userStates } from '../../../state.js';
-import { showMainMenu } from '../mainMenu.js';
+import menuController from '../mainMenu.js';
 import { AdminEventManager } from './AdminEventManager.js';
 import { EventWizard } from './eventWizzard.js';
 import EventService from '../../../services/eventsService.js';
@@ -109,7 +109,7 @@ export const setupAdminHandlers = () => {
 
                 case 'back_to_main':
                     delete userStates[chatId];
-                    await showMainMenu(chatId, true);
+                    await menuController.showMainMenu(chatId, true);
                     break;
 
                 default:
