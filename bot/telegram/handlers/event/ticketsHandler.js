@@ -4,8 +4,96 @@ import OrderService from '../../../services/orderService.js';
 import { User } from '../../../models/User.js';
 import { bot } from '../../botInstance.js';
 import PaymentService from '../../../services/paykeeper.js';
-import { userStates, userCarts, eventDetailsMessages, eventMessages } from '../../../state.js';
+import { userStates, userCarts, eventDetailsMessages, eventMessages, cartMessages, cartDetailsMessages } from '../../../state.js';
 
+// Функция для обновления кнопок в сообщении с событием
+export const updateEventButtons = async (chatId, event, quantity) => {
+    try {
+        const messageId = eventMessages[chatId]?.[event.id];
+        if (!messageId) return;
+
+        const keyboard = quantity > 0 ? [
+            [
+                { text: '➖', callback_data: `decrease_${event.id}` },
+                { text: `${quantity} шт.`, callback_data: `show_count_${event.id}` },
+                { text: '➕', callback_data: `increase_${event.id}` }
+            ],
+            [
+                { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` },
+                { text: '🛒 В корзину', callback_data: `add_to_cart_${event.id}` }
+            ]
+        ] : [
+            [
+                { text: '🛒 Купить билет', callback_data: `add_to_cart_${event.id}` },
+                { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` }
+            ]
+        ];
+
+        await bot.editMessageReplyMarkup(
+            { inline_keyboard: keyboard },
+            {
+                chat_id: chatId,
+                message_id: messageId
+            }
+        );
+    } catch (error) {
+        console.error('Ошибка при обновлении кнопок:', error);
+    }
+};
+
+// Функция для отправки нового сообщения с событием
+export const sendEventMessage = async (chatId, event, quantity = 0) => {
+    const eventDate = new Date(event.event_date);
+    const formattedDate = eventDate.toLocaleDateString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+    const formattedTime = eventDate.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+
+    const caption = `🎟️ *${event.title}*\n` +
+        `📅 ${formattedDate} в ${formattedTime}\n` +
+        `📍 ${event.event_location}\n` +
+        `💰 ${event.price} руб.`;
+
+    const keyboard = quantity > 0 ? [
+        [
+            { text: '➖', callback_data: `decrease_${event.id}` },
+            { text: `${quantity} шт.`, callback_data: `show_count_${event.id}` },
+            { text: '➕', callback_data: `increase_${event.id}` }
+        ],
+        [
+            { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` },
+            { text: '🛒 В корзину', callback_data: `add_to_cart_${event.id}` }
+        ]
+    ] : [
+        [
+            { text: '🛒 Купить билет', callback_data: `add_to_cart_${event.id}` },
+            { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` }
+        ]
+    ];
+
+    try {
+        const message = await bot.sendPhoto(chatId, event.image_url || 'https://via.placeholder.com/500', {
+            caption: caption,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard }
+        });
+
+        if (!eventMessages[chatId]) eventMessages[chatId] = {};
+        eventMessages[chatId][event.id] = message.message_id;
+
+        return message;
+    } catch (error) {
+        console.error('Ошибка при отправке сообщения:', error);
+        throw error;
+    }
+};
+
+// Функция для обновления всего сообщения с событием (если нужно)
 export const updateEventMessage = async (chatId, event, quantity) => {
     try {
         const messageId = eventMessages[chatId]?.[event.id];
@@ -27,7 +115,7 @@ export const updateEventMessage = async (chatId, event, quantity) => {
             `📍 ${event.event_location}\n` +
             `💰 ${event.price} руб.`;
 
-        const keyboard = [
+        const keyboard = quantity > 0 ? [
             [
                 { text: '➖', callback_data: `decrease_${event.id}` },
                 { text: `${quantity} шт.`, callback_data: `show_count_${event.id}` },
@@ -36,6 +124,11 @@ export const updateEventMessage = async (chatId, event, quantity) => {
             [
                 { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` },
                 { text: '🛒 В корзину', callback_data: `add_to_cart_${event.id}` }
+            ]
+        ] : [
+            [
+                { text: '🛒 Купить билет', callback_data: `add_to_cart_${event.id}` },
+                { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` }
             ]
         ];
 
@@ -49,6 +142,9 @@ export const updateEventMessage = async (chatId, event, quantity) => {
         console.error('Ошибка при обновлении сообщения:', error);
     }
 };
+
+// Остальные функции остаются без изменений, но используют updateEventButtons вместо updateEventMessage
+// при работе с корзиной (handleQuantityChange, handleRemoveFromCart и т.д.)
 
 export const showEventDetails = async (chatId, eventId, originalMessageId) => {
     try {
@@ -127,107 +223,312 @@ export const backToEvent = async (chatId, eventId, originalMessageId) => {
     }
 };
 
-export const handleEventCallbacks = async (callbackQuery) => {
-    const chatId = callbackQuery.message.chat.id;
-    const messageId = callbackQuery.message.message_id;
-    const data = callbackQuery.data;
-
-    try {
-        if (data.startsWith('event_details_')) {
-            const eventId = data.split('_')[2];
-            await showEventDetails(chatId, eventId, messageId);
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data.startsWith('back_to_event_')) {
-            const parts = data.split('_');
-            const eventId = parts[3];
-            const originalMessageId = parts[4];
-            await backToEvent(chatId, eventId, originalMessageId);
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data.startsWith('add_to_cart_')) {
-            const eventId = data.split('_')[3];
-            await handleAddToCart(chatId, eventId);
-            await bot.answerCallbackQuery(callbackQuery.id, { text: 'Добавлено в корзину' });
-        }
-        else if (data.startsWith('increase_')) {
-            const eventId = data.split('_')[1];
-            await handleQuantityChange(chatId, eventId, 'increase');
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data.startsWith('decrease_')) {
-            const eventId = data.split('_')[1];
-            await handleQuantityChange(chatId, eventId, 'decrease');
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data === 'view_cart') {
-            await showCart(chatId);
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data === 'checkout') {
-            await startCheckout(chatId);
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data === 'show_events') {
-            await showEventsList(chatId);
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data === 'clear_cart') {
-            await clearCart(chatId);
-            await bot.answerCallbackQuery(callbackQuery.id, { text: 'Корзина очищена' });
-        }
-        else if (data === 'edit_cart') {
-            await showEditableCart(chatId);
-            await bot.answerCallbackQuery(callbackQuery.id);
-        }
-        else if (data.startsWith('remove_from_cart_')) {
-            const eventId = data.split('_')[3];
-            await handleRemoveFromCart(chatId, eventId);
-            await bot.answerCallbackQuery(callbackQuery.id, { text: 'Удалено из корзины' });
-        }
-        else if (data.startsWith('check_payment_')) {
-            const paymentId = data.split('_')[2];
-            const isPaid = await PaymentService.checkPaymentStatus(paymentId);
-
-            if (isPaid) {
-                const userState = userStates[chatId];
-                if (userState) {
-                    const result = await PaymentService.handleSuccessfulPayment(
-                        paymentId,
-                        {
-                            first_name: userState.first_name,
-                            last_name: userState.last_name,
-                            phone: userState.phone,
-                            email: userState.email
-                        }
-                    );
-
-                    if (result.success) {
-                        await bot.answerCallbackQuery(callbackQuery.id, {
-                            text: '✅ Оплата подтверждена! Билеты отправлены на ваш email.'
-                        });
-                        await bot.editMessageReplyMarkup(
-                            { inline_keyboard: [[]] },
-                            {
-                                chat_id: chatId,
-                                message_id: messageId
-                            }
-                        );
-                    } else {
-                        await bot.answerCallbackQuery(callbackQuery.id, {
-                            text: 'Оплата подтверждена, но возникла ошибка при отправке билетов.'
-                        });
-                    }
-                }
-            } else {
-                await bot.answerCallbackQuery(callbackQuery.id, {
-                    text: 'Оплата еще не получена. Попробуйте позже.'
-                });
+export const showMiniCart = async (chatId) => {
+    const cart = userCarts[chatId];
+    if (!cart || cart.length === 0) {
+        if (cartMessages[chatId]) {
+            try {
+                await bot.deleteMessage(chatId, cartMessages[chatId]);
+                delete cartMessages[chatId];
+            } catch (e) {
+                console.error('Ошибка при удалении сообщения корзины:', e);
             }
         }
+        return;
+    }
+
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    let message = `🛒 *Текущая корзина*\n`;
+    message += `🎟️ Билетов: ${totalItems}\n`;
+    message += `💰 Сумма: ${totalAmount} руб.\n\n`;
+    message += `📝 Для оформления заказа нажмите "Оформить заказ"`;
+
+    try {
+        if (cartMessages[chatId]) {
+            await bot.editMessageText(message, {
+                chat_id: chatId,
+                message_id: cartMessages[chatId],
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '🛒 Показать корзину', callback_data: 'view_cart' },
+                            { text: '✅ Оформить заказ', callback_data: 'checkout' }
+                        ],
+                        [
+                            { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
+                        ]
+                    ]
+                }
+            });
+        } else {
+            const sentMessage = await bot.sendMessage(chatId, message, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '🛒 Показать корзину', callback_data: 'view_cart' },
+                            { text: '✅ Оформить заказ', callback_data: 'checkout' }
+                        ],
+                        [
+                            { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
+                        ]
+                    ]
+                }
+            });
+            cartMessages[chatId] = sentMessage.message_id;
+        }
     } catch (error) {
-        console.error('Ошибка в обработчике callback:', error);
-        await bot.answerCallbackQuery(callbackQuery.id, { text: 'Произошла ошибка' });
+        console.error('Ошибка при обновлении корзины:', error);
+    }
+};
+
+export const showCart = async (chatId) => {
+    try {
+        const cart = userCarts[chatId];
+        if (!cart || cart.length === 0) {
+            if (cartDetailsMessages[chatId]) {
+                try {
+                    await bot.deleteMessage(chatId, cartDetailsMessages[chatId]);
+                    delete cartDetailsMessages[chatId];
+                } catch (e) {
+                    console.error('Ошибка при удалении сообщения деталей корзины:', e);
+                }
+            }
+            return bot.sendMessage(chatId, '🛒 Ваша корзина пуста.');
+        }
+
+        let message = '🛒 *Ваша корзина*\n\n';
+        let totalAmount = 0;
+
+        cart.forEach((item, index) => {
+            totalAmount += item.price * item.quantity;
+            message += `🎭 *${item.title}*\n` +
+                `📅 ${new Date(item.event_date).toLocaleDateString('ru-RU')}\n` +
+                `📍 ${item.event_location}\n` +
+                `💰 ${item.price} руб. x ${item.quantity} = ${item.price * item.quantity} руб.\n\n`;
+        });
+
+        message += `💵 *Итого: ${totalAmount} руб.*`;
+
+        try {
+            if (cartDetailsMessages[chatId]) {
+                await bot.editMessageText(message, {
+                    chat_id: chatId,
+                    message_id: cartDetailsMessages[chatId],
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Оформить заказ', callback_data: 'checkout' },
+                                { text: '✏️ Изменить', callback_data: 'edit_cart' }
+                            ],
+                            [
+                                { text: '❌ Очистить корзину', callback_data: 'clear_cart' },
+                                { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
+                            ]
+                        ]
+                    }
+                });
+            } else {
+                const sentMessage = await bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Оформить заказ', callback_data: 'checkout' },
+                                { text: '✏️ Изменить', callback_data: 'edit_cart' }
+                            ],
+                            [
+                                { text: '❌ Очистить корзину', callback_data: 'clear_cart' },
+                                { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
+                            ]
+                        ]
+                    }
+                });
+                cartDetailsMessages[chatId] = sentMessage.message_id;
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении деталей корзины:', error);
+        }
+
+    } catch (error) {
+        console.error('Ошибка при отображении корзины:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке корзины.');
+    }
+};
+
+export const clearCart = async (chatId) => {
+    try {
+        const cart = userCarts[chatId];
+        if (!cart || cart.length === 0) {
+            return bot.sendMessage(chatId, '🛒 Ваша корзина уже пуста.');
+        }
+
+        for (const item of cart) {
+            for (const ticketId of item.ticketIds) {
+                await TicketService.cancelPendingTicket(ticketId);
+            }
+        }
+
+        delete userCarts[chatId];
+        
+        if (cartMessages[chatId]) {
+            try {
+                await bot.deleteMessage(chatId, cartMessages[chatId]);
+                delete cartMessages[chatId];
+            } catch (e) {
+                console.error('Ошибка при удалении сообщения корзины:', e);
+            }
+        }
+        
+        if (cartDetailsMessages[chatId]) {
+            try {
+                await bot.deleteMessage(chatId, cartDetailsMessages[chatId]);
+                delete cartDetailsMessages[chatId];
+            } catch (e) {
+                console.error('Ошибка при удалении сообщения деталей корзины:', e);
+            }
+        }
+
+        await bot.sendMessage(chatId, '🛒 Корзина успешно очищена.');
+        await showEventsList(chatId);
+
+    } catch (error) {
+        console.error('Ошибка при очистке корзины:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при очистке корзины.');
+    }
+};
+
+export const showEditableCart = async (chatId) => {
+    try {
+        const cart = userCarts[chatId];
+        if (!cart || cart.length === 0) {
+            return bot.sendMessage(chatId, '🛒 Ваша корзина пуста.');
+        }
+
+        let message = '🛒 *Редактирование корзины*\n\n';
+        let totalAmount = 0;
+
+        cart.forEach((item) => {
+            totalAmount += item.price * item.quantity;
+            message += `🎭 *${item.title}*\n` +
+                `📅 ${new Date(item.event_date).toLocaleDateString('ru-RU')}\n` +
+                `📍 ${item.event_location}\n` +
+                `💰 ${item.price} руб. x ${item.quantity} = ${item.price * item.quantity} руб.\n\n`;
+        });
+
+        message += `💵 *Итого: ${totalAmount} руб.*`;
+
+        const itemButtons = cart.map(item => [
+            { 
+                text: `➖ ${item.title}`, 
+                callback_data: `decrease_${item.eventId}` 
+            },
+            { 
+                text: `➕ ${item.title}`, 
+                callback_data: `increase_${item.eventId}` 
+            },
+            { 
+                text: `❌ Удалить ${item.title}`, 
+                callback_data: `remove_from_cart_${item.eventId}` 
+            }
+        ]);
+
+        const keyboard = [
+            ...itemButtons,
+            [
+                { text: '✅ Завершить редактирование', callback_data: 'view_cart' },
+                { text: '❌ Очистить корзину', callback_data: 'clear_cart' }
+            ],
+            [
+                { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
+            ]
+        ];
+
+        try {
+            if (cartDetailsMessages[chatId]) {
+                await bot.editMessageText(message, {
+                    chat_id: chatId,
+                    message_id: cartDetailsMessages[chatId],
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: keyboard
+                    }
+                });
+            } else {
+                const sentMessage = await bot.sendMessage(chatId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: keyboard
+                    }
+                });
+                cartDetailsMessages[chatId] = sentMessage.message_id;
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении редактируемой корзины:', error);
+        }
+
+    } catch (error) {
+        console.error('Ошибка при отображении редактируемой корзины:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке корзины.');
+    }
+};
+
+export const handleRemoveFromCart = async (chatId, eventId) => {
+    try {
+        const event = await EventService.getTicketById(eventId);
+        if (!event) {
+            return bot.sendMessage(chatId, '❌ Мероприятие не найдено.');
+        }
+
+        const cart = userCarts[chatId] || [];
+        const cartItemIndex = cart.findIndex(item => item.eventId === eventId);
+        
+        if (cartItemIndex === -1) return;
+
+        const cartItem = cart[cartItemIndex];
+
+        for (const ticketId of cartItem.ticketIds) {
+            await TicketService.cancelPendingTicket(ticketId).catch(console.error);
+        }
+
+        cart.splice(cartItemIndex, 1);
+        
+        if (cart.length === 0) {
+            delete userCarts[chatId];
+        }
+
+        await updateEventButtons(chatId, event, 0);
+        
+        if (cart.length > 0) {
+            await showEditableCart(chatId);
+            await showMiniCart(chatId);
+        } else {
+            if (cartMessages[chatId]) {
+                try {
+                    await bot.deleteMessage(chatId, cartMessages[chatId]);
+                    delete cartMessages[chatId];
+                } catch (e) {
+                    console.error('Ошибка при удалении сообщения корзины:', e);
+                }
+            }
+            if (cartDetailsMessages[chatId]) {
+                try {
+                    await bot.deleteMessage(chatId, cartDetailsMessages[chatId]);
+                    delete cartDetailsMessages[chatId];
+                } catch (e) {
+                    console.error('Ошибка при удалении сообщения деталей корзины:', e);
+                }
+            }
+            await bot.sendMessage(chatId, '🛒 Товар удален из корзины. Корзина теперь пуста.');
+        }
+
+    } catch (error) {
+        console.error('Ошибка при удалении из корзины:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Пожалуйста, попробуйте позже.');
     }
 };
 
@@ -268,7 +569,7 @@ export const handleAddToCart = async (chatId, eventId) => {
             userCarts[chatId].push(cartItem);
         }
 
-        await updateEventMessage(chatId, event, cartItem.quantity);
+        await updateEventButtons(chatId, event, cartItem.quantity);
         await showMiniCart(chatId);
 
     } catch (error) {
@@ -310,232 +611,37 @@ export const handleQuantityChange = async (chatId, eventId, action) => {
                 await TicketService.cancelPendingTicket(ticketId);
                 newQuantity = cartItem.quantity;
             } else {
-                // Удаляем билет из корзины, если количество стало 0
                 for (const ticketId of cartItem.ticketIds) {
                     await TicketService.cancelPendingTicket(ticketId).catch(console.error);
                 }
-                cart.splice(cartItemIndex, 1); // Удаляем элемент из корзины
+                cart.splice(cartItemIndex, 1);
                 shouldRemoveFromCart = true;
                 newQuantity = 0;
                 
-                // Если корзина пуста, удаляем её
                 if (cart.length === 0) {
                     delete userCarts[chatId];
                 }
             }
         }
 
-        if (shouldRemoveFromCart) {
-            // Полностью удаляем билет из корзины и возвращаем оригинальные кнопки
-            await sendEventMessage(chatId, event, 0);
-        } else {
-            // Обновляем количество в сообщении
-            await updateEventMessage(chatId, event, newQuantity);
-        }
-
+        await updateEventButtons(chatId, event, newQuantity);
         await showMiniCart(chatId);
+        
+        if (cartDetailsMessages[chatId]) {
+            if (cart.length > 0) {
+                await showEditableCart(chatId);
+            } else {
+                try {
+                    await bot.deleteMessage(chatId, cartDetailsMessages[chatId]);
+                    delete cartDetailsMessages[chatId];
+                } catch (e) {
+                    console.error('Ошибка при удалении сообщения деталей корзины:', e);
+                }
+            }
+        }
 
     } catch (error) {
         console.error('Ошибка при изменении количества:', error);
-        await bot.sendMessage(chatId, '❌ Произошла ошибка. Пожалуйста, попробуйте позже.');
-    }
-};
-
-export const showMiniCart = async (chatId) => {
-    const cart = userCarts[chatId];
-    if (!cart || cart.length === 0) return;
-
-    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    let message = `🛒 *Текущая корзина*\n`;
-    message += `🎟️ Билетов: ${totalItems}\n`;
-    message += `💰 Сумма: ${totalAmount} руб.\n\n`;
-    message += `📝 Для оформления заказа нажмите "Оформить заказ"`;
-
-    await bot.sendMessage(chatId, message, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: '🛒 Показать корзину', callback_data: 'view_cart' },
-                    { text: '✅ Оформить заказ', callback_data: 'checkout' }
-                ],
-                [
-                    { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
-                ]
-            ]
-        }
-    });
-};
-
-export const showCart = async (chatId) => {
-    try {
-        const cart = userCarts[chatId];
-        if (!cart || cart.length === 0) {
-            return bot.sendMessage(chatId, '🛒 Ваша корзина пуста.');
-        }
-
-        let message = '🛒 *Ваша корзина*\n\n';
-        let totalAmount = 0;
-
-        cart.forEach((item, index) => {
-            totalAmount += item.price * item.quantity;
-            message += `🎭 *${item.title}*\n` +
-                `📅 ${new Date(item.event_date).toLocaleDateString('ru-RU')}\n` +
-                `📍 ${item.event_location}\n` +
-                `💰 ${item.price} руб. x ${item.quantity} = ${item.price * item.quantity} руб.\n\n`;
-        });
-
-        message += `💵 *Итого: ${totalAmount} руб.*`;
-
-        await bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ Оформить заказ', callback_data: 'checkout' },
-                        { text: '✏️ Изменить', callback_data: 'edit_cart' }
-                    ],
-                    [
-                        { text: '❌ Очистить корзину', callback_data: 'clear_cart' },
-                        { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
-                    ]
-                ]
-            }
-        });
-
-    } catch (error) {
-        console.error('Ошибка при отображении корзины:', error);
-        await bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке корзины.');
-    }
-};
-
-export const clearCart = async (chatId) => {
-    try {
-        const cart = userCarts[chatId];
-        if (!cart || cart.length === 0) {
-            return bot.sendMessage(chatId, '🛒 Ваша корзина уже пуста.');
-        }
-
-        for (const item of cart) {
-            for (const ticketId of item.ticketIds) {
-                await TicketService.cancelPendingTicket(ticketId);
-            }
-        }
-
-        delete userCarts[chatId];
-        await bot.sendMessage(chatId, '🛒 Корзина успешно очищена.');
-        await showEventsList(chatId);
-
-    } catch (error) {
-        console.error('Ошибка при очистке корзины:', error);
-        await bot.sendMessage(chatId, '❌ Произошла ошибка при очистке корзины.');
-    }
-};
-
-export const showEditableCart = async (chatId) => {
-    try {
-        const cart = userCarts[chatId];
-        if (!cart || cart.length === 0) {
-            return bot.sendMessage(chatId, '🛒 Ваша корзина пуста.');
-        }
-
-        let message = '🛒 *Редактирование корзины*\n\n';
-        let totalAmount = 0;
-
-        cart.forEach((item) => {
-            totalAmount += item.price * item.quantity;
-            message += `🎭 *${item.title}*\n` +
-                `📅 ${new Date(item.event_date).toLocaleDateString('ru-RU')}\n` +
-                `📍 ${item.event_location}\n` +
-                `💰 ${item.price} руб. x ${item.quantity} = ${item.price * item.quantity} руб.\n\n`;
-        });
-
-        message += `💵 *Итого: ${totalAmount} руб.*`;
-
-        // Создаем кнопки для каждого элемента корзины
-        const itemButtons = cart.map(item => [
-            { 
-                text: `➖ ${item.title}`, 
-                callback_data: `decrease_${item.eventId}` 
-            },
-            { 
-                text: `➕ ${item.title}`, 
-                callback_data: `increase_${item.eventId}` 
-            },
-            { 
-                text: `❌ Удалить ${item.title}`, 
-                callback_data: `remove_from_cart_${item.eventId}` 
-            }
-        ]);
-
-        // Добавляем стандартные кнопки корзины
-        const keyboard = [
-            ...itemButtons,
-            [
-                { text: '✅ Завершить редактирование', callback_data: 'view_cart' },
-                { text: '❌ Очистить корзину', callback_data: 'clear_cart' }
-            ],
-            [
-                { text: '🔙 К мероприятиям', callback_data: 'show_tickets' }
-            ]
-        ];
-
-        await bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: keyboard
-            }
-        });
-
-    } catch (error) {
-        console.error('Ошибка при отображении редактируемой корзины:', error);
-        await bot.sendMessage(chatId, '❌ Произошла ошибка при загрузке корзины.');
-    }
-};
-
-// Новая функция для удаления товара из корзины
-export const handleRemoveFromCart = async (chatId, eventId) => {
-    try {
-        const event = await EventService.getTicketById(eventId);
-        if (!event) {
-            return bot.sendMessage(chatId, '❌ Мероприятие не найдено.');
-        }
-
-        const cart = userCarts[chatId] || [];
-        const cartItemIndex = cart.findIndex(item => item.eventId === eventId);
-        
-        if (cartItemIndex === -1) return;
-
-        const cartItem = cart[cartItemIndex];
-
-        // Отменяем все билеты для этого мероприятия
-        for (const ticketId of cartItem.ticketIds) {
-            await TicketService.cancelPendingTicket(ticketId).catch(console.error);
-        }
-
-        // Удаляем элемент из корзины
-        cart.splice(cartItemIndex, 1);
-        
-        // Если корзина пуста, удаляем её
-        if (cart.length === 0) {
-            delete userCarts[chatId];
-        }
-
-        // Обновляем сообщение мероприятия
-        await sendEventMessage(chatId, event, 0);
-        
-        // Показываем обновленную корзину или список мероприятий, если корзина пуста
-        if (cart.length > 0) {
-            await showEditableCart(chatId);
-        } else {
-            await bot.sendMessage(chatId, '🛒 Товар удален из корзины. Корзина теперь пуста.');
-            await showEventsList(chatId);
-        }
-
-    } catch (error) {
-        console.error('Ошибка при удалении из корзины:', error);
         await bot.sendMessage(chatId, '❌ Произошла ошибка. Пожалуйста, попробуйте позже.');
     }
 };
@@ -599,7 +705,6 @@ export const completeCheckout = async (chatId, userData) => {
             throw new Error(paymentResult.error || 'Ошибка при создании платежа');
         }
 
-        // Обновляем все билеты с paymentId
         for (const item of cartItems) {
             for (const ticketId of item.ticketIds) {
                 await TicketService.updatePaymentId(ticketId, paymentResult.paymentId);
@@ -626,6 +731,24 @@ export const completeCheckout = async (chatId, userData) => {
 
         delete userCarts[chatId];
         delete userStates[chatId];
+
+        if (cartMessages[chatId]) {
+            try {
+                await bot.deleteMessage(chatId, cartMessages[chatId]);
+                delete cartMessages[chatId];
+            } catch (e) {
+                console.error('Ошибка при удалении сообщения корзины:', e);
+            }
+        }
+        
+        if (cartDetailsMessages[chatId]) {
+            try {
+                await bot.deleteMessage(chatId, cartDetailsMessages[chatId]);
+                delete cartDetailsMessages[chatId];
+            } catch (e) {
+                console.error('Ошибка при удалении сообщения деталей корзины:', e);
+            }
+        }
 
         await bot.sendMessage(
             chatId,
@@ -666,54 +789,63 @@ export const completeCheckout = async (chatId, userData) => {
     }
 };
 
-export const sendEventMessage = async (chatId, event, quantity = 0) => {
-    const eventDate = new Date(event.event_date);
-    const formattedDate = eventDate.toLocaleDateString('ru-RU', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-    });
-    const formattedTime = eventDate.toLocaleTimeString('ru-RU', {
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-
-    const caption = `🎟️ *${event.title}*\n` +
-        `📅 ${formattedDate} в ${formattedTime}\n` +
-        `📍 ${event.event_location}\n` +
-        `💰 ${event.price} руб.`;
-
-    const keyboard = quantity > 0 ? [
-        [
-            { text: '➖', callback_data: `decrease_${event.id}` },
-            { text: `${quantity} шт.`, callback_data: `show_count_${event.id}` },
-            { text: '➕', callback_data: `increase_${event.id}` }
-        ],
-        [
-            { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` },
-            { text: '🛒 В корзину', callback_data: `add_to_cart_${event.id}` }
-        ]
-    ] : [
-        [
-            { text: '🛒 Купить билет', callback_data: `add_to_cart_${event.id}` },
-            { text: 'ℹ️ Подробнее', callback_data: `event_details_${event.id}` }
-        ]
-    ];
-
+export const handlePaymentCheck = async (chatId, paymentId, messageId, callbackQueryId) => {
     try {
-        const message = await bot.sendPhoto(chatId, event.image_url || 'https://via.placeholder.com/500', {
-            caption: caption,
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: keyboard }
+        // Сначала отвечаем на callback, чтобы Telegram знал, что запрос получен
+        await bot.answerCallbackQuery(callbackQueryId, { 
+            text: 'Проверяем статус платежа...',
+            show_alert: false
         });
 
-        if (!eventMessages[chatId]) eventMessages[chatId] = {};
-        eventMessages[chatId][event.id] = message.message_id;
+        // Затем выполняем проверку платежа (это может занять время)
+        const isPaid = await PaymentService.checkPaymentStatus(paymentId);
 
-        return message;
+        if (isPaid) {
+            const userState = userStates[chatId];
+            if (userState) {
+                const result = await PaymentService.handleSuccessfulPayment(
+                    paymentId,
+                    {
+                        first_name: userState.first_name,
+                        last_name: userState.last_name,
+                        phone: userState.phone,
+                        email: userState.email
+                    }
+                );
+
+                if (result.success) {
+                    // Отправляем новое сообщение вместо редактирования старого
+                    await bot.sendMessage(
+                        chatId,
+                        '✅ Оплата подтверждена! Билеты отправлены на ваш email.'
+                    );
+                    
+                    // Удаляем старое сообщение с кнопками оплаты
+                    try {
+                        await bot.deleteMessage(chatId, messageId);
+                    } catch (e) {
+                        console.error('Ошибка при удалении сообщения:', e);
+                    }
+                } else {
+                    await bot.sendMessage(
+                        chatId,
+                        'Оплата подтверждена, но возникла ошибка при отправке билетов.'
+                    );
+                }
+            }
+        } else {
+            // Если оплата еще не прошла, отправляем новое сообщение
+            await bot.sendMessage(
+                chatId,
+                'Оплата еще не получена. Попробуйте позже.'
+            );
+        }
     } catch (error) {
-        console.error('Ошибка при отправке сообщения:', error);
-        throw error;
+        console.error('Ошибка при проверке платежа:', error);
+        await bot.sendMessage(
+            chatId,
+            'Произошла ошибка при проверке платежа. Пожалуйста, попробуйте позже.'
+        );
     }
 };
 

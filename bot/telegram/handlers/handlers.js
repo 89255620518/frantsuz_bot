@@ -1,5 +1,5 @@
 import { bot } from '../botInstance.js';
-import { userStates, userCarts, eventDetailsMessages } from '../../state.js';
+import { userStates, eventDetailsMessages } from '../../state.js';
 import { User } from '../../models/User.js';
 import PaymentService from '../../services/paykeeper.js';
 import TicketService from '../../services/ticketService.js';
@@ -7,7 +7,6 @@ import { refundRules } from '../rules/refundRules.js';
 import { payRules } from '../rules/payRules.js';
 import { pay } from '../rules/pay.js';
 
-// Импорт обработчиков через контроллер
 import menuController from './mainMenu.js';
 import {
     showEventsList,
@@ -19,6 +18,7 @@ import {
     handleRemoveFromCart,
     handleTicketMessages,
     startCheckout,
+    handlePaymentCheck,
     showEventDetails,
     backToEvent,
 } from './event/ticketsHandler.js';
@@ -29,32 +29,68 @@ import {
     showAdminTicketsMenu
 } from './admin/adminHandlers.js';
 
+// Переносим функции в начало файла и экспортируем их
+// export const handlePaymentCheck = async (chatId, paymentId) => {
+//     const isPaid = await PaymentService.checkPaymentStatus(paymentId);
+
+//     if (isPaid) {
+//         await bot.answerCallbackQuery({
+//             text: '✅ Оплата подтверждена! Билеты отправлены на ваш email.',
+//             show_alert: true
+//         });
+//     } else {
+//         await bot.answerCallbackQuery({
+//             text: 'Оплата еще не получена. Попробуйте позже.',
+//             show_alert: true
+//         });
+//     }
+// };
+
+export const handlePaymentCancel = async (chatId, isAdmin) => {
+    await bot.answerCallbackQuery({ text: 'Платеж отменен' });
+    if (isAdmin) {
+        await showAdminTicketsMenu(chatId);
+    } else {
+        await showEventsList(chatId);
+    }
+};
+
+export const handleBackToMain = async (chatId, isAdmin) => {
+    if (isAdmin) {
+        await showAdminTicketsMenu(chatId);
+    } else {
+        await showEventsList(chatId);
+    }
+};
+
+export const handleError = async (chatId, error) => {
+    console.error('Error:', error);
+    await bot.sendMessage(
+        chatId,
+        '❌ Произошла ошибка. Пожалуйста, попробуйте позже или обратитесь в поддержку.'
+    );
+};
+
 export const setupEventHandlers = () => {
-    // Инициализация команд бота
     menuController.setupBotCommands();
     setupAdminHandlers();
 
-    // Обработка текстовых команд
     bot.onText(/\/start/, menuController.handleStartCommand);
     bot.onText(/\/tickets/, showEventsList);
     bot.onText(/\/cart/, showCart);
     bot.onText(/\/refund/, async (msg) => {
         const chatId = msg.chat.id;
-        const user = await User.findOne({ where: { telegram_id: chatId } });
         await refundRules.sendRefundRules(chatId, bot);
     });
     bot.onText(/\/pay_rules/, async (msg) => {
         const chatId = msg.chat.id;
-        const user = await User.findOne({ where: { telegram_id: chatId } });
         await payRules.sendPayRules(chatId, bot);
     });
     bot.onText(/\/pay/, async (msg) => {
         const chatId = msg.chat.id;
-        const user = await User.findOne({ where: { telegram_id: chatId } });
         await pay.sendPay(chatId, bot);
     });
 
-    // Обработка callback-запросов
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         if (!msg?.chat?.id) return;
@@ -73,7 +109,6 @@ export const setupEventHandlers = () => {
             const dbUser = await User.findOne({ where: { telegram_id: user.id } });
             const isAdmin = dbUser?.is_admin || false;
 
-            // Обработка событий
             switch (true) {
                 case data.startsWith('event_details_'):
                     const eventId = parseInt(data.split('_')[2]);
@@ -116,8 +151,12 @@ export const setupEventHandlers = () => {
                     break;
 
                 case data.startsWith('check_payment_'):
-                    await handlePaymentCheck(chatId, data.replace('check_payment_', ''));
-                    await bot.answerCallbackQuery(callbackQuery.id);
+                    await handlePaymentCheck(
+                        chatId, 
+                        data.replace('check_payment_', ''),
+                        msg.message_id,
+                        callbackQuery.id
+                    );
                     break;
 
                 case data === 'contacts':
@@ -164,6 +203,7 @@ export const setupEventHandlers = () => {
                 case data === 'pay_rules':
                     await payRules.sendPayRules(chatId, bot);
                     break;
+
                 case data === 'pay':
                     await pay.sendPay(chatId, bot);
                     break;
@@ -196,7 +236,6 @@ export const setupEventHandlers = () => {
         }
     });
 
-    // Обработка обычных сообщений
     bot.on('message', async (msg) => {
         if (!msg?.chat?.id) return;
 
@@ -206,13 +245,11 @@ export const setupEventHandlers = () => {
         try {
             const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
 
-            // Обработка административных сообщений
             if (userState?.isAdminAction) {
                 await handleAdminMessages(msg);
                 return;
             }
 
-            // Обработка сообщений, связанных с билетами
             await handleTicketMessages(msg);
         } catch (error) {
             console.error('Error in message handler:', error);
