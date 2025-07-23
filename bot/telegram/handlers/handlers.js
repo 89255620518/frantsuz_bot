@@ -29,23 +29,6 @@ import {
     showAdminTicketsMenu
 } from './admin/adminHandlers.js';
 
-// Переносим функции в начало файла и экспортируем их
-// export const handlePaymentCheck = async (chatId, paymentId) => {
-//     const isPaid = await PaymentService.checkPaymentStatus(paymentId);
-
-//     if (isPaid) {
-//         await bot.answerCallbackQuery({
-//             text: '✅ Оплата подтверждена! Билеты отправлены на ваш email.',
-//             show_alert: true
-//         });
-//     } else {
-//         await bot.answerCallbackQuery({
-//             text: 'Оплата еще не получена. Попробуйте позже.',
-//             show_alert: true
-//         });
-//     }
-// };
-
 export const handlePaymentCancel = async (chatId, isAdmin) => {
     await bot.answerCallbackQuery({ text: 'Платеж отменен' });
     if (isAdmin) {

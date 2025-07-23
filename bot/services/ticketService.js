@@ -14,7 +14,7 @@ class TicketService {
                     user_id: userId,
                     payment_status: 'pending',
                     created_at: {
-                        [Op.lt]: new Date(Date.now() - 5 * 60 * 1000)
+                        [Op.lt]: new Date(Date.now() - 10 * 60 * 1000)
                     }
                 }
             });
@@ -23,7 +23,7 @@ class TicketService {
                 user_id: userId,
                 ticket_id: ticketId,
                 payment_status: 'pending',
-                expires_at: new Date(Date.now() + 5 * 60 * 1000)
+                expires_at: new Date(Date.now() + 10 * 60 * 1000)
             });
 
             setTimeout(async () => {
@@ -32,12 +32,12 @@ class TicketService {
                     if (freshTicket && freshTicket.payment_status === 'pending') {
                         await freshTicket.update({ payment_status: 'canceled' });
                         await freshTicket.destroy();
-                        console.log(`Билет ${ticket.id} автоматически удален (не оплачен в течение 5 минут)`);
+                        console.log(`Билет ${ticket.id} автоматически удален (не оплачен в течение 10 минут)`);
                     }
                 } catch (error) {
                     console.error('Ошибка при автоматическом удалении билета:', error);
                 }
-            }, 5 * 60 * 1000);
+            }, 10 * 60 * 1000);
 
             return ticket;
         } catch (error) {

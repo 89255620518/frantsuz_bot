@@ -2,8 +2,8 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { URLSearchParams } from 'url';
 import base64 from 'base-64';
-import { sendUserTicketEmail, sendAdminNotification } from './emailService.js';
-import TicketService from './ticketService.js';
+import { UserTicket } from '../models/UserTicket.js';
+import { Op } from 'sequelize';
 
 dotenv.config();
 
@@ -50,9 +50,12 @@ class PaymentService {
         }
     }
 
+    /**
+     * Создает счет в PayKeeper и привязывает его к билету
+     */
     async createInvoice(ticketData) {
         try {
-            // 1. Получаем токен для создания счета
+            // 1. Получаем токен
             const tokenResponse = await axios.post(
                 `${this.PAYKEEPER_SERVER}/info/settings/token/`,
                 {},
@@ -62,21 +65,20 @@ class PaymentService {
             const token = tokenResponse.data?.token;
             if (!token) throw new Error('Failed to get token from PayKeeper');
 
-            // 3. Формируем данные для счета
+            // 2. Формируем данные для счета
             const customerName = `${ticketData.customer.first_name} ${ticketData.customer.last_name}`.trim();
             const paymentParams = new URLSearchParams();
 
             paymentParams.append('pay_amount', ticketData.price);
             paymentParams.append('clientid', customerName.substring(0, 100));
-            paymentParams.append('orderid', ticketData.id); // Используем ID билета как orderid
+            paymentParams.append('orderid', ticketData.id);
             paymentParams.append('service_name', `Билет: ${ticketData.event.title}`.substring(0, 100));
             paymentParams.append('client_email', ticketData.customer.email);
             paymentParams.append('client_phone', ticketData.customer.phone);
             paymentParams.append('token', token);
             paymentParams.append('payment_currency', 'RUB');
-            paymentParams.append('payment_details', `Билет №${ticketData.id}`);
 
-            // 4. Создаем счет в PayKeeper
+            // 3. Создаем счет
             const invoiceResponse = await axios.post(
                 `${this.PAYKEEPER_SERVER}/change/invoice/preview/`,
                 paymentParams,
@@ -102,57 +104,231 @@ class PaymentService {
         }
     }
 
-    async checkPaymentStatus(invoiceId) {
+    /**
+     * Получает статус платежа по invoice_id
+     */
+    async getPaymentStatus(invoiceId) {
         try {
             const response = await axios.get(
-                `${this.PAYKEEPER_SERVER}/info/invoice/status/?id=${invoiceId}`,
+                `${this.PAYKEEPER_SERVER}/info/invoice/byid/?id=${invoiceId}`,
                 { headers: this.headers, timeout: 10000 }
             );
 
-            return response.data?.status === 'paid';
+            if (!response.data || !response.data.status) {
+                throw new Error('Invalid response from PayKeeper');
+            }
+
+            return {
+                success: true,
+                status: response.data.status,
+                amount: response.data.pay_amount,
+                orderId: response.data.orderid,
+                paymentDate: response.data.paid_at,
+                clientEmail: response.data.client_email,
+                clientPhone: response.data.client_phone
+            };
         } catch (error) {
             console.error('Payment status check error:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Обрабатывает успешный платеж
+     */
+    async processSuccessfulPayment(invoiceId) {
+        const transaction = await UserTicket.sequelize.transaction();
+        try {
+            // 1. Находим ВСЕ билеты по payment_id
+            const userTickets = await UserTicket.findAll({
+                where: { payment_id: invoiceId },
+                transaction
+            });
+
+            if (!userTickets || userTickets.length === 0) {
+                throw new Error('UserTickets not found for this payment');
+            }
+
+            // 2. Обновляем статус ВСЕХ билетов
+            await Promise.all(userTickets.map(ticket =>
+                ticket.update({
+                    payment_status: 'paid',
+                    expires_at: null,
+                }, { transaction })
+            ));
+
+            await transaction.commit();
+
+            return {
+                success: true,
+                userTickets: userTickets
+            };
+
+        } catch (error) {
+            await transaction.rollback();
+            console.error('Payment processing error:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Обрабатывает отмену платежа
+     */
+    async cancelPayment(invoiceId) {
+        try {
+            const userTicket = await UserTicket.findAll({
+                where: { payment_id: invoiceId }
+            });
+
+            if (userTicket) {
+                await Promise.all(userTickets.map(ticket =>
+                    ticket.update({
+                        payment_status: 'canceled'
+                    })
+                ));
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Cancel payment error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Проверяет статус платежа и отправляет уведомление
+     */
+    async checkPaymentAndNotify(invoiceId, notifyCallback) {
+        try {
+            // 1. Проверяем статус
+            const status = await this.getPaymentStatus(invoiceId);
+            if (!status.success) {
+                await notifyCallback(`Ошибка при проверке платежа: ${status.error}`);
+                return false;
+            }
+
+            // 2. Обрабатываем статус
+            switch (status.status) {
+                case 'paid':
+                    const processResult = await this.processSuccessfulPayment(invoiceId);
+                    if (processResult.success) {
+                        const ticket = processResult.userTickets;
+
+                        await notifyCallback(
+                            `✅ Платеж успешно завершен!\n` +
+                            `🎫 Номер билета: ${ticket.ticket_number}\n` +
+                            `💳 Сумма: ${status.amount} RUB\n` +
+                            `📅 Дата оплаты: ${new Date(ticket.updated_at).toLocaleString()}`
+                        );
+                        return true;
+                    } else {
+                        await notifyCallback(`Ошибка обработки платежа: ${processResult.error}`);
+                        return false;
+                    }
+
+                case 'pending':
+                    await notifyCallback('⏳ Платеж еще не поступил. Если вы уже оплатили, подождите 5-10 минут.');
+                    return false;
+
+                case 'canceled':
+                    await this.cancelPayment(invoiceId);
+                    await notifyCallback('❌ Платеж был отменен. Вы можете создать новый заказ.');
+                    return false;
+
+                default:
+                    await notifyCallback(`Статус платежа: ${status.status}`);
+                    return false;
+            }
+        } catch (error) {
+            console.error('Payment check error:', error);
+            await notifyCallback('⚠ Произошла ошибка при проверке платежа');
             return false;
         }
     }
 
-    async handleSuccessfulPayment(invoiceId, userData) {
-        try {
-            // 1. Подтверждаем оплату в TicketService
-            const ticket = await TicketService.confirmPayment(invoiceId);
+    /**
+     * Настраивает автоматическую проверку платежа
+     */
+    async setupPaymentAutoCheck(invoiceId, notifyCallback, intervalMinutes = 2) {
+        const checkInterval = setInterval(async () => {
+            try {
+                const result = await this.checkPaymentAndNotify(invoiceId, notifyCallback);
 
-            if (!ticket) {
-                throw new Error('Ticket not found for this payment');
+                if (result) {
+                    clearInterval(checkInterval);
+                }
+
+                // Дополнительная проверка - если билет уже оплачен, прекращаем проверку
+                const userTicket = await UserTicket.findOne({
+                    where: { payment_id: invoiceId }
+                });
+
+                if (userTicket && userTicket.payment_status === 'paid') {
+                    clearInterval(checkInterval);
+                }
+            } catch (error) {
+                console.error('Auto check error:', error);
+            }
+        }, intervalMinutes * 60 * 1000);
+
+        return checkInterval;
+    }
+
+    /**
+     * Проверяет все pending платежи (для cron job)
+     */
+    async checkAllPendingPayments(notifyCallback) {
+        try {
+            const pendingTickets = await UserTicket.findAll({
+                where: {
+                    payment_status: 'pending',
+                    expires_at: { [Op.gt]: new Date() },
+                    payment_id: { [Op.not]: null }
+                }
+            });
+
+            for (const ticket of pendingTickets) {
+                await this.checkPaymentAndNotify(ticket.payment_id, notifyCallback);
             }
 
-            // 2. Подготавливаем данные для email
-            const ticketData = {
-                number: ticket.id,
-                event: {
-                    title: ticket.event.title,
-                    date: ticket.event.date,
-                    time: ticket.event.time,
-                    location: ticket.event.location
-                },
-                customer: {
-                    name: `${userData.first_name} ${userData.last_name}`,
-                    phone: userData.phone,
-                    email: userData.email
-                },
-                price: ticket.price,
-                invoiceId: invoiceId
-            };
-
-            // 3. Отправляем email пользователю
-            await sendUserTicketEmail(userData.email, ticketData);
-
-            // 4. Отправляем уведомление администратору
-            await sendAdminNotification('zakaz@dali-khinkali.ru', ticketData);
-
-            return { success: true, ticket };
-
+            return { success: true, checked: pendingTickets.length };
         } catch (error) {
-            console.error('Payment handling error:', error);
+            console.error('Error checking pending payments:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Отменяет просроченные платежи (для cron job)
+     */
+    async cancelExpiredPayments(notifyCallback) {
+        try {
+            const expiredTickets = await UserTicket.findAll({
+                where: {
+                    payment_status: 'pending',
+                    expires_at: { [Op.lt]: new Date() },
+                    payment_id: { [Op.not]: null }
+                }
+            });
+
+            for (const ticket of expiredTickets) {
+                await this.cancelPayment(ticket.payment_id);
+                await notifyCallback(
+                    `⌛ Время оплаты билета ${ticket.ticket_number} истекло.\n` +
+                    `Заказ был автоматически отменен. Вы можете создать новый заказ.`,
+                    ticket.telegram_chat_id
+                );
+            }
+
+            return { success: true, canceled: expiredTickets.length };
+        } catch (error) {
+            console.error('Error canceling expired payments:', error);
             return { success: false, error: error.message };
         }
     }
