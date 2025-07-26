@@ -12,6 +12,7 @@ class Order extends Model {
             foreignKey: 'order_id',
             as: 'items'
         });
+
     }
 }
 

@@ -3,7 +3,11 @@ import dotenv from 'dotenv';
 import { URLSearchParams } from 'url';
 import base64 from 'base-64';
 import { UserTicket } from '../models/UserTicket.js';
+import { Order } from '../models/Orders.js';
+import { OrderItem } from '../models/OrderItem.js';
+import { Ticket } from '../models/Event.js';
 import { Op } from 'sequelize';
+import { sendTicketsToCustomer, notifyAdminAboutOrder } from './emailService.js';
 
 dotenv.config();
 
@@ -142,9 +146,25 @@ class PaymentService {
     async processSuccessfulPayment(invoiceId) {
         const transaction = await UserTicket.sequelize.transaction();
         try {
-            // 1. Находим ВСЕ билеты по payment_id
+            // 1. Находим все билеты по payment_id с связанными данными
             const userTickets = await UserTicket.findAll({
                 where: { payment_id: invoiceId },
+                include: [
+                    {
+                        model: Ticket,
+                        as: 'ticket',
+                        attributes: ['id', 'title', 'description', 'event_date', 'event_location', 'price']
+                    },
+                    {
+                        model: OrderItem,
+                        as: 'order_item',
+                        include: [{
+                            model: Order,
+                            as: 'order',
+                            attributes: ['id', 'user_id', 'first_name', 'last_name', 'email', 'phone', 'total_amount', 'created_at']
+                        }]
+                    }
+                ],
                 transaction
             });
 
@@ -152,7 +172,7 @@ class PaymentService {
                 throw new Error('UserTickets not found for this payment');
             }
 
-            // 2. Обновляем статус ВСЕХ билетов
+            // 2. Обновляем статус всех билетов
             await Promise.all(userTickets.map(ticket =>
                 ticket.update({
                     payment_status: 'paid',
@@ -161,6 +181,45 @@ class PaymentService {
             ));
 
             await transaction.commit();
+
+            // 3. Группируем билеты по заказам (должен быть только один заказ на invoiceId)
+            const ordersMap = new Map();
+            
+            userTickets.forEach(ticket => {
+                const order = ticket.order_item?.order;
+                if (order && !ordersMap.has(order.id)) {
+                    ordersMap.set(order.id, {
+                        orderData: order,
+                        tickets: userTickets // Все билеты этого платежа
+                    });
+                }
+            });
+
+            // 4. Отправляем уведомления
+            for (const [orderId, orderInfo] of ordersMap) {
+                const { orderData, tickets } = orderInfo;
+
+                // Отправка пользователю - все билеты одним письмом
+                try {
+                    await sendTicketsToCustomer(
+                        orderData.email,
+                        orderData,
+                        tickets
+                    );
+                } catch (emailError) {
+                    console.error('Ошибка отправки билетов пользователю:', emailError);
+                }
+
+                // Отправка администратору - все билеты одним письмом
+                try {
+                    await notifyAdminAboutOrder(
+                        orderData,
+                        tickets
+                    );
+                } catch (adminEmailError) {
+                    console.error('Ошибка отправки уведомления администратору:', adminEmailError);
+                }
+            }
 
             return {
                 success: true,
@@ -206,7 +265,7 @@ class PaymentService {
      */
     async checkPaymentAndNotify(invoiceId, notifyCallback) {
         try {
-            // 1. Проверяем статус
+            // 1. Проверяем статус платежа
             const status = await this.getPaymentStatus(invoiceId);
             if (!status.success) {
                 await notifyCallback(`Ошибка при проверке платежа: ${status.error}`);
@@ -218,14 +277,22 @@ class PaymentService {
                 case 'paid':
                     const processResult = await this.processSuccessfulPayment(invoiceId);
                     if (processResult.success) {
-                        const ticket = processResult.userTickets;
+                        const tickets = processResult.userTickets;
 
-                        await notifyCallback(
-                            `✅ Платеж успешно завершен!\n` +
-                            `🎫 Номер билета: ${ticket.ticket_number}\n` +
+                        // Базовое сообщение
+                        let message = `✅ Платеж успешно завершен!\n` +
                             `💳 Сумма: ${status.amount} RUB\n` +
-                            `📅 Дата оплаты: ${new Date(ticket.updated_at).toLocaleString()}`
-                        );
+                            `📅 Дата оплаты: ${new Date().toLocaleString()}\n\n` +
+                            `🎫 Полученные билеты (${tickets.length} шт.):\n`;
+
+                        // Добавляем информацию о каждом билете
+                        tickets.forEach((ticket, index) => {
+                            message += `\n${index + 1}. Номер билета: ${ticket.ticket_number}\n` +
+                                `   Дата создания: ${new Date(ticket.created_at).toLocaleString()}\n` +
+                                `   Статус: ${ticket.is_used ? 'Использован' : 'Активен'}\n`;
+                        });
+
+                        await notifyCallback(message);
                         return true;
                     } else {
                         await notifyCallback(`Ошибка обработки платежа: ${processResult.error}`);
@@ -242,7 +309,7 @@ class PaymentService {
                     return false;
 
                 default:
-                    await notifyCallback(`Статус платежа: ${status.status}`);
+                    await notifyCallback(`Неизвестный статус платежа: ${status.status}`);
                     return false;
             }
         } catch (error) {
