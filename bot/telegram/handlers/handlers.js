@@ -1,11 +1,10 @@
 import { bot } from '../botInstance.js';
-import { userStates, eventDetailsMessages } from '../../state.js';
+import { userStates } from '../../state.js';
 import { User } from '../../models/User.js';
-import PaymentService from '../../services/paykeeper.js';
-import TicketService from '../../services/ticketService.js';
 import { refundRules } from '../rules/refundRules.js';
 import { payRules } from '../rules/payRules.js';
 import { pay } from '../rules/pay.js';
+import { setupQRHandlers } from './qrHandler.js';
 
 import menuController from './mainMenu.js';
 import {
@@ -57,6 +56,7 @@ export const handleError = async (chatId, error) => {
 export const setupEventHandlers = () => {
     menuController.setupBotCommands();
     setupAdminHandlers();
+    setupQRHandlers();
 
     bot.onText(/\/start/, menuController.handleStartCommand);
     bot.onText(/\/tickets/, showEventsList);
@@ -96,6 +96,12 @@ export const setupEventHandlers = () => {
                 case data.startsWith('event_details_'):
                     const eventId = parseInt(data.split('_')[2]);
                     await showEventDetails(chatId, eventId, messageId);
+                    break;
+
+                case data.startsWith('back_to_command_menu'):
+                    const dbUser = await User.findOne({ where: { telegram_id: user.id } });
+                    await menuController.showMainMenu(chatId, dbUser?.is_admin || false);
+                    await bot.answerCallbackQuery(callbackQuery.id);
                     break;
 
                 case data.startsWith('back_to_event_'):

@@ -49,13 +49,22 @@ Visa | MasterCard | Мир
         disable_web_page_preview: true,
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🔙 В меню', callback_data: 'back_to_main' }]
+            [{ text: '🎟️ К билетам', callback_data: 'show_tickets' }],
+            [{ text: '💳 Оплата', callback_data: 'pay' }],
+            [{ text: '🔙 В главное меню', callback_data: 'back_to_command_menu' }]
           ]
         }
       });
     } catch (error) {
-      console.error('Error sending payment rules:', error);
-      await bot.sendMessage(chatId, '⚠️ Произошла ошибка при загрузке правил оплаты. Пожалуйста, попробуйте позже.');
+      console.error('Error sending payment instructions:', error);
+      await bot.sendMessage(chatId, '⚠️ Ой! Что-то пошло не так при загрузке инструкции. Давайте попробуем ещё раз?', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔄 Повторить попытку', callback_data: 'pay_rules' }],
+            [{ text: '🔙 В главное меню', callback_data: 'back_to_command_menu' }]
+          ]
+        }
+      });
     }
   }
 };
