@@ -4,7 +4,7 @@ import { User } from '../../models/User.js';
 import { refundRules } from '../rules/refundRules.js';
 import { payRules } from '../rules/payRules.js';
 import { pay } from '../rules/pay.js';
-import { setupQRHandlers } from './qrHandler.js';
+import { setupQRScanner, processTicket } from './qrHandler.js';
 
 import menuController from './mainMenu.js';
 import {
@@ -54,13 +54,15 @@ export const handleError = async (chatId, error) => {
 };
 
 export const setupEventHandlers = () => {
+    setupQRScanner();
     menuController.setupBotCommands();
     setupAdminHandlers();
-    setupQRHandlers();
 
     bot.onText(/\/start/, menuController.handleStartCommand);
     bot.onText(/\/tickets/, showEventsList);
     bot.onText(/\/cart/, showCart);
+
+    // Команды, связанные с оплатой и правилами
     bot.onText(/\/refund/, async (msg) => {
         const chatId = msg.chat.id;
         await refundRules.sendRefundRules(chatId, bot);
@@ -72,6 +74,107 @@ export const setupEventHandlers = () => {
     bot.onText(/\/pay/, async (msg) => {
         const chatId = msg.chat.id;
         await pay.sendPay(chatId, bot);
+    });
+
+    // Веб-приложения и разделы клуба
+    bot.onText(/\/menu/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🍽️ Открываю меню бара и кухни...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти в меню", web_app: { url: process.env.WEB_APP_URL_MENU } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/billiard/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🎯 Открываю раздел бильярда...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти к бильярду", web_app: { url: process.env.WEB_APP_URL_BILLARD } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/karaoke/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🎤 Открываю раздел караоке...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти к караоке", web_app: { url: process.env.WEB_APP_URL_CARAOKE } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/disco/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "💿 Открываю диско-бар...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти в диско-бар", web_app: { url: process.env.WEB_APP_URL_dISCO } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/lounge/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🛋️ Открываю лаунж зону...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти в лаунж", web_app: { url: process.env.WEB_APP_URL_LAUNZH } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/playstation/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🎮 Открываю раздел игровых приставок...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти к Playstation", web_app: { url: process.env.WEB_APP_URL_PLAYSTATIONS } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/games/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🎲 Открываю раздел настольных игр...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти к играм", web_app: { url: process.env.WEB_APP_URL_TABLEPLAY } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/events/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "📅 Открываю афишу мероприятий...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти к афише", web_app: { url: process.env.WEB_APP_URL_AFISHA } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/reserve/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🛎️ Открываю раздел бронирования...", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "Перейти к бронированию", web_app: { url: process.env.WEB_APP_URL_RESERVE } }]
+                ]
+            }
+        });
+    });
+
+    bot.onText(/\/show_tickets/, async (msg) => {
+        const chatId = msg.chat.id;
+        await showEventsList(chatId);
+    });
+
+    bot.onText(/\/contacts/, async (msg) => {
+        const chatId = msg.chat.id;
+        await showContacts(chatId);
     });
 
     bot.on('callback_query', async (callbackQuery) => {
@@ -141,7 +244,7 @@ export const setupEventHandlers = () => {
 
                 case data.startsWith('check_payment_'):
                     await handlePaymentCheck(
-                        chatId, 
+                        chatId,
                         data.replace('check_payment_', ''),
                         msg.message_id,
                         callbackQuery.id
@@ -234,6 +337,35 @@ export const setupEventHandlers = () => {
         try {
             const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
 
+            // Обработка QR-кода (имеет абсолютный приоритет)
+            if (msg.text) {
+                // Обрабатываем прямые номера билетов
+                const qrPattern = /^(Француз-|Frantsuz-)\d+/i;
+
+                // Обрабатываем команду /start с параметром (URL)
+                const startQrPattern = /^\/start\s+(?:Француз-|Frantsuz-)?(\d+)/i;
+
+                let ticketNumber = null;
+
+                // Проверяем обычный формат билета
+                if (qrPattern.test(msg.text.trim())) {
+                    ticketNumber = msg.text.trim();
+                }
+                // Проверяем команду /start с параметром
+                else if (msg.text.startsWith('/start ')) {
+                    const match = msg.text.match(startQrPattern);
+                    if (match && match[1]) {
+                        ticketNumber = `Француз-${match[1]}`;
+                    }
+                }
+
+                if (ticketNumber) {
+                    await processTicket(chatId, ticketNumber);
+                    return; // Важно: завершаем обработку здесь
+                }
+            }
+
+            // Остальная логика обработки сообщений...
             if (userState?.isAdminAction) {
                 await handleAdminMessages(msg);
                 return;

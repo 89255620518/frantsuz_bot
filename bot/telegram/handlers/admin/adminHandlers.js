@@ -1,9 +1,10 @@
 import { bot } from '../../botInstance.js';
 import { userStates } from '../../../state.js';
-import menuController from '../mainMenu.js';
 import { AdminEventManager } from './AdminEventManager.js';
 import { EventWizard } from './eventWizzard.js';
 import EventService from '../../../services/eventsService.js';
+import { adminPanelController } from './adminPanel.js';
+import menuController from '../mainMenu.js';
 
 const eventManager = new AdminEventManager(bot, EventService, userStates);
 const eventWizard = new EventWizard(bot, EventService, userStates);
@@ -26,8 +27,7 @@ export const handleAdminMessages = async (msg) => {
             if (isNaN(ticketId)) {
                 return await bot.sendMessage(
                     chatId,
-                    '❌ <b>Неверный ID мероприятия</b>\n' +
-                    'Пожалуйста, введите числовой ID',
+                    '❌ Неверный ID мероприятия\nПожалуйста, введите числовой ID',
                     { parse_mode: 'HTML' }
                 );
             }
@@ -40,8 +40,7 @@ export const handleAdminMessages = async (msg) => {
             if (isNaN(ticketId)) {
                 return await bot.sendMessage(
                     chatId,
-                    '❌ <b>Неверный ID мероприятия</b>\n' +
-                    'Пожалуйста, введите числовой ID',
+                    '❌ Неверный ID мероприятия\nПожалуйста, введите числовой ID',
                     { parse_mode: 'HTML' }
                 );
             }
@@ -56,18 +55,14 @@ export const handleAdminMessages = async (msg) => {
         }
 
     } catch (error) {
-        console.error('Ошибка в обработчике администратора:', error);
-        await bot.sendMessage(
-            chatId,
-            '⚠️ <b>Произошла ошибка</b>\n' +
-            'Попробуйте позже или обратитесь к разработчику',
-            { parse_mode: 'HTML' }
-        );
+        console.error('Admin message handler error:', error);
+        await bot.sendMessage(chatId, '⚠️ Произошла ошибка');
         delete userStates[chatId];
     }
 };
 
 export const setupAdminHandlers = () => {
+
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         const chatId = msg.chat.id;
@@ -76,10 +71,9 @@ export const setupAdminHandlers = () => {
 
         try {
             if (!userState?.isAdminAction && !data.startsWith('admin_')) {
-                // Пропускаем обработку, не отвечаем на callback
                 return;
             }
-            
+
             if (userState?.isAdminAction && data.startsWith('edit_')) {
                 await eventManager.handleEditCallback(chatId, data);
                 await bot.answerCallbackQuery(callbackQuery.id);
@@ -111,6 +105,12 @@ export const setupAdminHandlers = () => {
                     delete userStates[chatId];
                     await menuController.showMainMenu(chatId, true);
                     break;
+                case 'admin_panel':
+                    await adminPanelController.handleAdminPanel(chatId);
+                    break;
+                case 'admin_full_stats':
+                    await adminPanelController.getFullStatistics(chatId);
+                    break;
 
                 default:
                     await bot.answerCallbackQuery(callbackQuery.id, {
@@ -123,9 +123,9 @@ export const setupAdminHandlers = () => {
             await bot.answerCallbackQuery(callbackQuery.id);
 
         } catch (error) {
-            console.error('Ошибка в обработчике:', error);
+            console.error('Admin callback handler error:', error);
             await bot.answerCallbackQuery(callbackQuery.id, {
-                text: '⚠️ Ошибка при обработке команды',
+                text: '⚠️ Ошибка обработки',
                 show_alert: true
             });
         }

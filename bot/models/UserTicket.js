@@ -27,7 +27,11 @@ class UserTicket extends Model {
 
     static async generateQRCode(ticketNumber) {
         try {
-            return await QRCode.toDataURL(ticketNumber, {
+            // Удаляем encodeURIComponent, чтобы сохранить кириллицу как есть
+            const telegramUrl = `https://t.me/${process.env.BOT_USERNAME}?start=${ticketNumber}`;
+
+            console.log('Генерация QR с ссылкой:', telegramUrl);
+            return await QRCode.toDataURL(telegramUrl, {
                 width: 200,
                 margin: 1,
                 color: { dark: '#000', light: '#fff' }
@@ -47,7 +51,7 @@ const initUserTicket = (sequelize) => {
                 autoIncrement: true,
                 primaryKey: true
             },
-            user_id: { 
+            user_id: {
                 type: DataTypes.BIGINT,
                 allowNull: false,
                 references: {
@@ -55,7 +59,7 @@ const initUserTicket = (sequelize) => {
                     key: 'telegram_id'
                 },
             },
-            ticket_id: { 
+            ticket_id: {
                 type: DataTypes.INTEGER,
                 allowNull: false,
                 references: {

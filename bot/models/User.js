@@ -14,11 +14,14 @@ class User extends Model {
         });
     }
     
+    // models/User.js
     static async findOrCreateFromTelegram(telegramUser) {
         if (!telegramUser?.id) {
             throw new Error('Invalid Telegram user data: missing id');
         }
 
+        const transaction = await this.sequelize.transaction();
+        
         try {
             const [user, created] = await this.findOrCreate({
                 where: { telegram_id: telegramUser.id },
@@ -30,13 +33,25 @@ class User extends Model {
                     language_code: telegramUser.language_code || null,
                     is_bot: telegramUser.is_bot || false
                 },
-                transaction: await this.sequelize.transaction()
+                transaction
             });
 
+            // Обновляем данные, если пользователь уже существовал
+            if (!created) {
+                await user.update({
+                    username: telegramUser.username || user.username,
+                    first_name: telegramUser.first_name || user.first_name,
+                    last_name: telegramUser.last_name || user.last_name,
+                    language_code: telegramUser.language_code || user.language_code
+                }, { transaction });
+            }
+
+            await transaction.commit();
             return { user, created };
         } catch (error) {
+            await transaction.rollback();
             console.error('Error in findOrCreateFromTelegram:', error);
-            throw new Error('Failed to create or find user');
+            throw error;
         }
     }
 }

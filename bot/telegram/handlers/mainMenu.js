@@ -134,7 +134,7 @@ const menuController = {
             { command: '/lounge', description: 'Лаунж зона' },
             { command: '/playstation', description: 'Игровые приставки' },
             { command: '/games', description: 'Настольные игры' },
-            { command: '/tickets', description: 'Купить билеты' },
+            { command: '/show_tickets', description: 'Купить билеты' },
             { command: '/events', description: 'Афиша мероприятий' },
             { command: '/pay', description: 'Оплата' },
             { command: '/pay_rules', description: 'Правила оплаты' },
