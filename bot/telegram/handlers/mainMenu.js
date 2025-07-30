@@ -4,6 +4,22 @@ import { User } from '../../models/User.js';
 // Флаг для предотвращения дублирования меню
 const menuShown = new Set();
 
+// Общая функция для проверки/регистрации пользователя
+async function ensureUserRegistered(msg) {
+    const chatId = msg.chat?.id;
+    const user = msg.from;
+
+    if (!chatId || !user?.id) {
+        console.error('Invalid message structure:', msg);
+        throw new Error('Не удалось получить данные профиля');
+    }
+
+    const result = await User.findOrCreateFromTelegram(user);
+    if (!result?.user) throw new Error('User creation failed');
+    
+    return result.user;
+}
+
 const menuController = {
     showMainMenu: async (chatId, isAdmin = false) => {
         if (menuShown.has(chatId)) return;
@@ -31,19 +47,16 @@ const menuController = {
                     { text: '🛎️ Бронирование', web_app: { url: process.env.WEB_APP_URL_RESERVE } },
                     { text: '🎟️ Билеты', callback_data: 'show_tickets' }
                 ],
-                // Утилиты
                 [
                     { text: '💳 Оплата', callback_data: 'pay' },
                     { text: '📞 Контакты', callback_data: 'contacts' }
                 ],
-                // Информация
                 [
                     { text: '📝 Правила оплаты', callback_data: 'pay_rules' },
                     { text: '↩️ Правила возврата', callback_data: 'refund' }
                 ]
             ];
 
-            // Админ-панель
             if (isAdmin) {
                 menuButtons.push([
                     { text: '🛠️ Управление билетами', callback_data: 'admin_tickets' },
@@ -64,31 +77,14 @@ const menuController = {
 
     handleStartCommand: async (msg) => {
         const chatId = msg.chat?.id;
-        const user = msg.from;
-
-        if (!chatId || !user?.id) {
-            console.error('Invalid message structure:', msg);
-            return bot.sendMessage(
-                chatId || user?.id,
-                '⚠️ Не удалось получить данные вашего профиля. Пожалуйста, попробуйте еще раз.'
-            );
-        }
-
+        
         try {
-            const result = await User.findOrCreateFromTelegram(user);
-            if (!result?.user) throw new Error('User creation failed');
-
-            const { user: dbUser, created } = result;
-            console.log(`User ${created ? 'created' : 'updated'}:`, {
-                id: dbUser.telegram_id,
-                username: dbUser.username,
-                first_name: dbUser.first_name
-            });
-
+            const dbUser = await ensureUserRegistered(msg);
+            
             const welcomeText = `
-            🎭 ${created ? 'Добро пожаловать' : 'С возвращением'}, ${dbUser.first_name} в развлекательный комплекс "Француз"!
+            🎭 ${dbUser.created_at.getTime() > Date.now() - 60000 ? 'Добро пожаловать' : 'С возвращением'}, ${dbUser.first_name} в развлекательный комплекс "Француз"!
 
-            ✨ ${created ? 'Вы успешно зарегистрированы!' : 'Рады видеть вас снова!'}
+            ✨ ${dbUser.created_at.getTime() > Date.now() - 60000 ? 'Вы успешно зарегистрированы!' : 'Рады видеть вас снова!'}
 
             🎉 Ваш идеальный вечер начинается здесь:
             • 🎯 Бильярд для истинных ценителей
@@ -111,7 +107,6 @@ const menuController = {
         }
     },
 
-
     setupBotCommands: () => {
         const commands = [
             { command: '/start', description: 'Начать работу с ботом' },
@@ -131,18 +126,58 @@ const menuController = {
             { command: '/contacts', description: 'Контакты' }
         ];
 
+        // Обработчики для всех команд
+        commands.forEach(cmd => {
+            if (cmd.command !== '/start') {
+                bot.onText(new RegExp(`^${cmd.command}$`), async (msg) => {
+                    try {
+                        const dbUser = await ensureUserRegistered(msg);
+                        await menuController.showMainMenu(msg.chat.id, dbUser.is_admin);
+                    } catch (error) {
+                        console.error(`Command ${cmd.command} error:`, error);
+                        await bot.sendMessage(msg.chat.id, '⚠️ Произошла ошибка. Пожалуйста, попробуйте позже.');
+                    }
+                });
+            }
+        });
+
         return bot.setMyCommands(commands)
             .then(() => console.log('Командное меню успешно настроено'))
             .catch(err => {
                 console.error('Ошибка настройки команд:', err);
                 throw err;
             });
+    },
+
+    // Обработчик для inline-кнопок
+    setupInlineHandlers: () => {
+        const callbackQueries = [
+            'show_tickets', 'pay', 'contacts', 'pay_rules', 'refund',
+            'admin_tickets', 'admin_panel'
+        ];
+
+        callbackQueries.forEach(query => {
+            bot.on('callback_query', async (callbackQuery) => {
+                if (callbackQuery.data === query) {
+                    try {
+                        const dbUser = await ensureUserRegistered(callbackQuery.message);
+                        await menuController.showMainMenu(callbackQuery.message.chat.id, dbUser.is_admin);
+                    } catch (error) {
+                        console.error(`Callback ${query} error:`, error);
+                        await bot.answerCallbackQuery(callbackQuery.id, {
+                            text: '⚠️ Ошибка обработки запроса',
+                            show_alert: true
+                        });
+                    }
+                }
+            });
+        });
     }
 };
 
-// Инициализация команд при старте
+// Инициализация
 menuController.setupBotCommands();
+menuController.setupInlineHandlers();
 
-// Экспортируем как именованные экспорты и default
 export const { showMainMenu, handleStartCommand, setupBotCommands } = menuController;
 export default menuController;

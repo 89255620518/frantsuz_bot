@@ -62,11 +62,9 @@ export const setupEventHandlers = () => {
     menuController.setupBotCommands();
     setupAdminHandlers();
 
-    // Обработчик команды /start
     bot.onText(/\/start/, async (msg) => {
         const chatId = msg.chat.id;
-        
-        // Если /start с параметром (билетом)
+
         if (msg.text.startsWith('/start ')) {
             const param = msg.text.split(' ')[1].trim();
             const ticketNumber = /^\d+$/.test(param) ? `Француз-${param}` : param;
@@ -78,44 +76,41 @@ export const setupEventHandlers = () => {
             }
         }
 
-        // Обычный /start
         userStates[chatId] = { ...userStates[chatId], started: true };
         await buttonTracker.trackButtonClick('start');
         await menuController.handleStartCommand(msg);
     });
 
-    // Все остальные обработчики команд (/tickets, /cart и т.д.)
     bot.onText(/\/tickets/, async (msg) => {
-        await buttonTracker.trackButtonClick('tickets');
+        await buttonTracker.trackButtonClick('Мероприятия');
         await showEventsList(msg.chat.id);
     });
 
     bot.onText(/\/cart/, async (msg) => {
-        await buttonTracker.trackButtonClick('cart');
+        await buttonTracker.trackButtonClick('Корзина');
         await showCart(msg.chat.id);
     });
 
     bot.onText(/\/refund/, async (msg) => {
-        await buttonTracker.trackButtonClick('refund');
+        await buttonTracker.trackButtonClick('Возврат');
         const chatId = msg.chat.id;
         await refundRules.sendRefundRules(chatId, bot);
     });
 
     bot.onText(/\/pay_rules/, async (msg) => {
-        await buttonTracker.trackButtonClick('pay_rules');
+        await buttonTracker.trackButtonClick('Правила оплаты');
         const chatId = msg.chat.id;
         await payRules.sendPayRules(chatId, bot);
     });
 
     bot.onText(/\/pay/, async (msg) => {
-        await buttonTracker.trackButtonClick('pay');
+        await buttonTracker.trackButtonClick('Оплата');
         const chatId = msg.chat.id;
         await pay.sendPay(chatId, bot);
     });
 
-    // Веб-приложения и разделы клуба
     bot.onText(/\/menu/, async (msg) => {
-        await buttonTracker.trackButtonClick('menu');
+        await buttonTracker.trackButtonClick('Меню');
         await bot.sendMessage(msg.chat.id, "🍽️ Открываю меню бара и кухни...", {
             reply_markup: {
                 inline_keyboard: [
@@ -126,7 +121,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/billiard/, async (msg) => {
-        await buttonTracker.trackButtonClick('billiard');
+        await buttonTracker.trackButtonClick('Бильярд');
         await bot.sendMessage(msg.chat.id, "🎯 Открываю раздел бильярда...", {
             reply_markup: {
                 inline_keyboard: [
@@ -137,7 +132,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/karaoke/, async (msg) => {
-        await buttonTracker.trackButtonClick('karaoke');
+        await buttonTracker.trackButtonClick('Караоке');
         await bot.sendMessage(msg.chat.id, "🎤 Открываю раздел караоке...", {
             reply_markup: {
                 inline_keyboard: [
@@ -148,7 +143,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/disco/, async (msg) => {
-        await buttonTracker.trackButtonClick('disco');
+        await buttonTracker.trackButtonClick('Диско-бар');
         await bot.sendMessage(msg.chat.id, "💿 Открываю диско-бар...", {
             reply_markup: {
                 inline_keyboard: [
@@ -159,7 +154,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/lounge/, async (msg) => {
-        await buttonTracker.trackButtonClick('lounge');
+        await buttonTracker.trackButtonClick('Лаунж зона');
         await bot.sendMessage(msg.chat.id, "🛋️ Открываю лаунж зону...", {
             reply_markup: {
                 inline_keyboard: [
@@ -181,7 +176,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/games/, async (msg) => {
-        await buttonTracker.trackButtonClick('games');
+        await buttonTracker.trackButtonClick('Игры');
         await bot.sendMessage(msg.chat.id, "🎲 Открываю раздел настольных игр...", {
             reply_markup: {
                 inline_keyboard: [
@@ -192,7 +187,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/events/, async (msg) => {
-        await buttonTracker.trackButtonClick('events');
+        await buttonTracker.trackButtonClick('Афиша');
         await bot.sendMessage(msg.chat.id, "📅 Открываю афишу мероприятий...", {
             reply_markup: {
                 inline_keyboard: [
@@ -203,7 +198,7 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/reserve/, async (msg) => {
-        await buttonTracker.trackButtonClick('reserve');
+        await buttonTracker.trackButtonClick('Бронирования');
         await bot.sendMessage(msg.chat.id, "🛎️ Открываю раздел бронирования...", {
             reply_markup: {
                 inline_keyboard: [
@@ -214,18 +209,17 @@ export const setupEventHandlers = () => {
     });
 
     bot.onText(/\/show_tickets/, async (msg) => {
-        await buttonTracker.trackButtonClick('show_tickets');
+        await buttonTracker.trackButtonClick('Билеты');
         const chatId = msg.chat.id;
         await showEventsList(chatId);
     });
 
     bot.onText(/\/contacts/, async (msg) => {
-        await buttonTracker.trackButtonClick('contacts');
+        await buttonTracker.trackButtonClick('Контакты');
         const chatId = msg.chat.id;
         await showContacts(chatId);
     });
 
-    // Обработчик callback_query (без изменений)
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         if (!msg?.chat?.id) return;
@@ -253,7 +247,7 @@ export const setupEventHandlers = () => {
                     break;
 
                 case data.startsWith('back_to_command_menu'):
-                    buttonType='back_to_command_menu';
+                    buttonType='В меню';
                     const dbUser = await User.findOne({ where: { telegram_id: user.id } });
                     await menuController.showMainMenu(chatId, dbUser?.is_admin || false);
                     await bot.answerCallbackQuery(callbackQuery.id);
@@ -268,21 +262,21 @@ export const setupEventHandlers = () => {
                     break;
 
                 case data.startsWith('add_to_cart_'):
-                    buttonType='добавить корзину';
+                    buttonType='Добавить корзину';
                     const cartEventId = parseInt(data.split('_')[3]);
                     await handleAddToCart(chatId, cartEventId);
                     await bot.answerCallbackQuery(callbackQuery.id, { text: 'Добавлено в корзину' });
                     break;
 
                 case data.startsWith('increase_'):
-                    buttonType='increase';
+                    buttonType='Увеличить';
                     const incEventId = parseInt(data.split('_')[1]);
                     await handleQuantityChange(chatId, incEventId, 'increase');
                     await bot.answerCallbackQuery(callbackQuery.id);
                     break;
 
                 case data.startsWith('decrease_'):
-                    buttonType='decrease';
+                    buttonType='Уменьшить';
                     const decEventId = parseInt(data.split('_')[1]);
                     await handleQuantityChange(chatId, decEventId, 'decrease');
                     await bot.answerCallbackQuery(callbackQuery.id);
@@ -301,7 +295,7 @@ export const setupEventHandlers = () => {
                     break;
 
                 case data.startsWith('check_payment_'):
-                    buttonType = 'перейти к оплате';
+                    buttonType = 'Перейти к оплате';
                     await handlePaymentCheck(
                         chatId,
                         data.replace('check_payment_', ''),
@@ -311,7 +305,7 @@ export const setupEventHandlers = () => {
                     break;
 
                 case data === 'contacts':
-                    buttonType='контакты';
+                    buttonType='Контакты';
                     await showContacts(chatId);
                     break;
 
@@ -328,40 +322,40 @@ export const setupEventHandlers = () => {
                     break;
 
                 case data === 'edit_cart':
-                    buttonType='изменения корзины';
+                    buttonType='Изменения корзины';
                     await showEditableCart(chatId);
                     await bot.answerCallbackQuery(callbackQuery.id);
                     break;
 
                 case data.startsWith('remove_from_cart_'):
-                    buttonType='удаления билета корзины';
+                    buttonType='Удаления билета корзины';
                     const removeEventId = parseInt(data.split('_')[3]);
                     await handleRemoveFromCart(chatId, removeEventId);
                     await bot.answerCallbackQuery(callbackQuery.id, { text: 'Удалено из корзины' });
                     break;
 
                 case data === 'cancel_payment':
-                    buttonType='отмена оплаты';
+                    buttonType='Отмена оплаты';
                     await handlePaymentCancel(chatId, isAdmin);
                     break;
 
                 case data === 'back_to_main':
-                    buttonType='back_to_main';
+                    buttonType='Назад в меню';
                     await handleBackToMain(chatId, isAdmin);
                     break;
 
                 case data === 'refund':
-                    buttonType='возврат';
+                    buttonType='Возврат';
                     await refundRules.sendRefundRules(chatId, bot);
                     break;
 
                 case data === 'pay_rules':
-                    buttonType='правила оплаты';
+                    buttonType='Правила оплаты';
                     await payRules.sendPayRules(chatId, bot);
                     break;
 
                 case data === 'pay':
-                    buttonType='оплата';
+                    buttonType='Оплата';
                     await pay.sendPay(chatId, bot);
                     break;
 
@@ -395,7 +389,6 @@ export const setupEventHandlers = () => {
         }
     });
 
-    // Обработчик обычных сообщений
     bot.on('message', async (msg) => {
         if (!msg?.chat?.id || !msg.text) return;
 
@@ -404,20 +397,17 @@ export const setupEventHandlers = () => {
         const userState = userStates[chatId];
 
         try {
-            // Если пользователь уже запустил бота (/start) и отправляет номер билета
             if (userState?.started && text.match(/^(Француз-|Frantsuz-)\d+$/i)) {
                 const ticketNumber = text.replace(/^Frantsuz-/i, 'Француз-');
                 await processTicket(chatId, ticketNumber);
                 return;
             }
 
-            // Обработка административных сообщений
             if (userState?.isAdminAction) {
                 await handleAdminMessages(msg);
                 return;
             }
 
-            // Остальные сообщения (корзина и т.д.)
             await handleTicketMessages(msg);
         } catch (error) {
             console.error('Error in message handler:', error);
