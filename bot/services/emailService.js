@@ -3,16 +3,24 @@ import { formatDate, formatTime } from './dateFormatters.js';
 
 // Настройки SMTP
 const transporter = nodemailer.createTransport({
-    host: 'server61.hosting.reg.ru',
+    // host: 'server61.hosting.reg.ru',
+    // port: 465,
+    // secure: true, // SSL
+    // auth: {
+    //     user: 'zakaz@dali-khinkali.ru',
+    //     pass: '1234567Asd!'
+    // }
+    host: 'smtp.beget.com',
     port: 465,
-    secure: true, // SSL
+    secure: true,
     auth: {
-        user: 'zakaz@dali-khinkali.ru',
-        pass: '1234567Asd!'
+        user: 'ibra001@ibrokhim.ru',
+        pass: 'Restart%1996'
     }
 });
 
-const ADMIN_EMAIL = 'zakaz@dali-khinkali.ru'
+// const ADMIN_EMAIL = 'zakaz@dali-khinkali.ru'
+const ADMIN_EMAIL = 'ibra001@ibrokhim.ru'
 
 /**
  * Генерирует HTML для билетов
@@ -82,7 +90,7 @@ export const sendTicketsToCustomer = async (userEmail, order, userTickets) => {
         });
 
         const mailOptions = {
-            from: '" Развлекательный комплекс Француз" <zakaz@dali-khinkali.ru>',
+            from: '" Развлекательный комплекс Француз" <ibra001@ibrokhim.ru>',
             to: userEmail,
             subject: `Ваши билеты в развлекательный комплекс "Француз"`,
             html: `
@@ -267,7 +275,7 @@ export const notifyAdminAboutOrder = async (order, userTickets) => {
         });
 
         const mailOptions = {
-            from: '"Развлекательный комплекс Француз" <zakaz@dali-khinkali.ru>',
+            from: '"Развлекательный комплекс Француз" <ibra001@ibrokhim.ru>',
             to: ADMIN_EMAIL,
             subject: `Новый заказ №${order.id} в РК "Француз"`,
             html: `

@@ -1,4 +1,4 @@
-// qrHandler.js
+
 import { bot } from '../botInstance.js';
 import { UserTicket } from '../../models/UserTicket.js';
 import { Ticket } from '../../models/Event.js';
@@ -10,37 +10,6 @@ import { formatDate } from '../../services/dateFormatters.js';
 export const setupQRScanner = () => {
     console.log('🔍 Инициализация сканера QR-кодов...');
 
-    // Универсальный обработчик для всех текстовых сообщений
-    bot.on('message', async (msg) => {
-        if (!msg.text) return;
-
-        const chatId = msg.chat.id;
-        let ticketNumber = msg.text.trim();
-
-        // Обработка /start с параметром
-        if (msg.text.startsWith('/start ')) {
-            const param = msg.text.split(' ')[1].trim();
-            // Проверяем, содержит ли параметр только цифры
-            if (/^\d+$/.test(param)) {
-                ticketNumber = `Француз-${param}`;
-            } else {
-                ticketNumber = param;
-            }
-        }
-
-        // Проверка формата билета (допускаем как "Француз-123", так и "Frantsuz-123")
-        if (!ticketNumber.match(/^(Француз-|Frantsuz-)\d+$/i)) {
-            return; // Не наш формат - пропускаем
-        }
-
-        // Нормализуем номер билета к единому формату "Француз-XXXXXX"
-        ticketNumber = ticketNumber.replace(/^Frantsuz-/i, 'Француз-');
-
-        console.log(`[QR] Найден билет: ${ticketNumber}`);
-        await processTicket(chatId, ticketNumber);
-    });
-
-    // Обработчик для отметки билета как использованного
     bot.on('callback_query', async (callbackQuery) => {
         const data = callbackQuery.data;
         const chatId = callbackQuery.message.chat.id;

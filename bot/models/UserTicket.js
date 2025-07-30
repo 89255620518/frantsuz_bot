@@ -28,7 +28,8 @@ class UserTicket extends Model {
     static async generateQRCode(ticketNumber) {
         try {
             // Удаляем encodeURIComponent, чтобы сохранить кириллицу как есть
-            const telegramUrl = `https://t.me/${process.env.BOT_USERNAME}?start=${ticketNumber}`;
+            const ticketId = ticketNumber.replace('Француз-', '');
+            const telegramUrl = `https://t.me/${process.env.BOT_USERNAME}?start=${ticketId}`;
 
             console.log('Генерация QR с ссылкой:', telegramUrl);
             return await QRCode.toDataURL(telegramUrl, {

@@ -62,11 +62,29 @@ export const setupEventHandlers = () => {
     menuController.setupBotCommands();
     setupAdminHandlers();
 
+    // Обработчик команды /start
     bot.onText(/\/start/, async (msg) => {
+        const chatId = msg.chat.id;
+        
+        // Если /start с параметром (билетом)
+        if (msg.text.startsWith('/start ')) {
+            const param = msg.text.split(' ')[1].trim();
+            const ticketNumber = /^\d+$/.test(param) ? `Француз-${param}` : param;
+            
+            if (ticketNumber.match(/^(Француз-|Frantsuz-)\d+$/i)) {
+                const normalizedTicket = ticketNumber.replace(/^Frantsuz-/i, 'Француз-');
+                await processTicket(chatId, normalizedTicket);
+                return;
+            }
+        }
+
+        // Обычный /start
+        userStates[chatId] = { ...userStates[chatId], started: true };
         await buttonTracker.trackButtonClick('start');
         await menuController.handleStartCommand(msg);
     });
 
+    // Все остальные обработчики команд (/tickets, /cart и т.д.)
     bot.onText(/\/tickets/, async (msg) => {
         await buttonTracker.trackButtonClick('tickets');
         await showEventsList(msg.chat.id);
@@ -77,7 +95,6 @@ export const setupEventHandlers = () => {
         await showCart(msg.chat.id);
     });
 
-    // Команды, связанные с оплатой и правилами
     bot.onText(/\/refund/, async (msg) => {
         await buttonTracker.trackButtonClick('refund');
         const chatId = msg.chat.id;
@@ -208,6 +225,7 @@ export const setupEventHandlers = () => {
         await showContacts(chatId);
     });
 
+    // Обработчик callback_query (без изменений)
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         if (!msg?.chat?.id) return;
@@ -226,7 +244,6 @@ export const setupEventHandlers = () => {
             const dbUser = await User.findOne({ where: { telegram_id: user.id } });
             const isAdmin = dbUser?.is_admin || false;
             let buttonType;
-
 
             switch (true) {
                 case data.startsWith('event_details_'):
@@ -328,11 +345,6 @@ export const setupEventHandlers = () => {
                     await handlePaymentCancel(chatId, isAdmin);
                     break;
 
-                // case data === 'admin_tickets' && isAdmin:
-                //     buttonType='управление билетами';
-                //     await showAdminTicketsMenu(chatId);
-                //     break;
-
                 case data === 'back_to_main':
                     buttonType='back_to_main';
                     await handleBackToMain(chatId, isAdmin);
@@ -383,49 +395,29 @@ export const setupEventHandlers = () => {
         }
     });
 
+    // Обработчик обычных сообщений
     bot.on('message', async (msg) => {
-        if (!msg?.chat?.id) return;
+        if (!msg?.chat?.id || !msg.text) return;
 
         const chatId = msg.chat.id;
+        const text = msg.text.trim();
         const userState = userStates[chatId];
 
         try {
-            const dbUser = await User.findOne({ where: { telegram_id: msg.from.id } });
-
-            // Обработка QR-кода (имеет абсолютный приоритет)
-            if (msg.text) {
-                // Обрабатываем прямые номера билетов
-                const qrPattern = /^(Француз-|Frantsuz-)\d+/i;
-
-                // Обрабатываем команду /start с параметром (URL)
-                const startQrPattern = /^\/start\s+(?:Француз-|Frantsuz-)?(\d+)/i;
-
-                let ticketNumber = null;
-
-                // Проверяем обычный формат билета
-                if (qrPattern.test(msg.text.trim())) {
-                    ticketNumber = msg.text.trim();
-                }
-                // Проверяем команду /start с параметром
-                else if (msg.text.startsWith('/start ')) {
-                    const match = msg.text.match(startQrPattern);
-                    if (match && match[1]) {
-                        ticketNumber = `Француз-${match[1]}`;
-                    }
-                }
-
-                if (ticketNumber) {
-                    await processTicket(chatId, ticketNumber);
-                    return; // Важно: завершаем обработку здесь
-                }
+            // Если пользователь уже запустил бота (/start) и отправляет номер билета
+            if (userState?.started && text.match(/^(Француз-|Frantsuz-)\d+$/i)) {
+                const ticketNumber = text.replace(/^Frantsuz-/i, 'Француз-');
+                await processTicket(chatId, ticketNumber);
+                return;
             }
 
-            // Остальная логика обработки сообщений...
+            // Обработка административных сообщений
             if (userState?.isAdminAction) {
                 await handleAdminMessages(msg);
                 return;
             }
 
+            // Остальные сообщения (корзина и т.д.)
             await handleTicketMessages(msg);
         } catch (error) {
             console.error('Error in message handler:', error);

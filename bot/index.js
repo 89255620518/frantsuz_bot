@@ -33,7 +33,6 @@ async function startTicketCleanupJob() {
 async function startBot() {
     try {
         await initializeModels();
-        setupQRScanner();
         await startTicketCleanupJob();
 
         setupEventHandlers();
