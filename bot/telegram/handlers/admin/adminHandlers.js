@@ -114,7 +114,7 @@ export const setupAdminHandlers = () => {
 
                 default:
                     await bot.answerCallbackQuery(callbackQuery.id, {
-                        text: '❌ Неизвестная команда',
+                        // text: '❌ Неизвестная команда',
                         show_alert: false
                     });
                     return;

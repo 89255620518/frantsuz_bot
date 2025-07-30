@@ -3,6 +3,7 @@ import { initTicket } from './Event.js';
 import { initUserTicket } from './UserTicket.js';
 import { initOrder } from './Orders.js';
 import { initOrderItem } from './OrderItem.js';
+import { initButtonClick } from './ButtonClick.js';
 import pkg from '../config/config.cjs';
 const { sequelize } = pkg;
 
@@ -14,6 +15,8 @@ async function initializeModels() {
         const UserTicket = initUserTicket(sequelize);
         const Order = initOrder(sequelize);
         const OrderItem = initOrderItem(sequelize);
+        const ButtonClick = initButtonClick(sequelize);
+
 
         // Установка связей между моделями
         User.associate({ Ticket, UserTicket, Order });
@@ -32,6 +35,7 @@ async function initializeModels() {
             UserTicket,
             Order,
             OrderItem,
+            ButtonClick,
         };
     } catch (error) {
         console.error('Ошибка при инициализации моделей:', error);

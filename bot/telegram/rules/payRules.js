@@ -3,7 +3,7 @@ import { bot } from '../botInstance.js';
 export const payRules = {
   generatePayRules: () => {
     return `
-🎭 <b>Правила оплаты в Развлекательном клубе "Француз"</b> 🎤🎱💿
+🎭 <b>Правила оплаты в развлекательном комплексе "Француз"</b> 🎤🎱💿
 
 💳 <b>Принимаем к оплате:</b>
 Visa | MasterCard | Мир 
@@ -51,7 +51,8 @@ Visa | MasterCard | Мир
           inline_keyboard: [
             [{ text: '🎟️ К билетам', callback_data: 'show_tickets' }],
             [{ text: '💳 Оплата', callback_data: 'pay' }],
-            [{ text: '🔙 В главное меню', callback_data: 'back_to_command_menu' }]
+            [{ text: '🔙 В главное меню', callback_data: 'back_to_command_menu' }],
+            [{ text: '📞 Контакты', callback_data: 'contacts' }]
           ]
         }
       });
@@ -61,7 +62,8 @@ Visa | MasterCard | Мир
         reply_markup: {
           inline_keyboard: [
             [{ text: '🔄 Повторить попытку', callback_data: 'pay_rules' }],
-            [{ text: '🔙 В главное меню', callback_data: 'back_to_command_menu' }]
+            [{ text: '🔙 В главное меню', callback_data: 'back_to_command_menu' }],
+            [{ text: '📞 Контакты', callback_data: 'contacts' }]
           ]
         }
       });

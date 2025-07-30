@@ -28,7 +28,7 @@ export class AdminEventManager {
                         { text: '🗑️ Удалить', callback_data: 'admin_delete_ticket_select' }
                     ],
                     [
-                        { text: '🏠 На главную', callback_data: 'back_to_main' }
+                        { text: '🏠 На главную', callback_data: 'back_to_command_menu' }
                     ]
                 ]
             }

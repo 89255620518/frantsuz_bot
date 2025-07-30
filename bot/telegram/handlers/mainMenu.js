@@ -1,16 +1,10 @@
 import { bot } from '../botInstance.js';
 import { User } from '../../models/User.js';
-import { refundRules } from '../rules/refundRules.js';
 
 // Флаг для предотвращения дублирования меню
 const menuShown = new Set();
 
 const menuController = {
-    /**
-     * Отображает главное меню с интерактивными кнопками
-     * @param {number} chatId - ID чата
-     * @param {boolean} isAdmin - Флаг администратора
-     */
     showMainMenu: async (chatId, isAdmin = false) => {
         if (menuShown.has(chatId)) return;
         menuShown.add(chatId);
@@ -53,7 +47,7 @@ const menuController = {
             if (isAdmin) {
                 menuButtons.push([
                     { text: '🛠️ Управление билетами', callback_data: 'admin_tickets' },
-                    { text: '⚙️ Админ-панель', callback_data: 'admin_panel' }
+                    { text: '⚙️ Статистика', callback_data: 'admin_panel' }
                 ]);
             }
 
@@ -68,10 +62,6 @@ const menuController = {
         }
     },
 
-    /**
-     * Обрабатывает команду /start
-     * @param {Object} msg - Объект сообщения Telegram
-     */
     handleStartCommand: async (msg) => {
         const chatId = msg.chat?.id;
         const user = msg.from;
@@ -96,7 +86,7 @@ const menuController = {
             });
 
             const welcomeText = `
-            🎭 ${created ? 'Добро пожаловать' : 'С возвращением'}, ${dbUser.first_name} в Развлекательный клуб "Француз"!
+            🎭 ${created ? 'Добро пожаловать' : 'С возвращением'}, ${dbUser.first_name} в развлекательный комплекс "Француз"!
 
             ✨ ${created ? 'Вы успешно зарегистрированы!' : 'Рады видеть вас снова!'}
 
@@ -121,9 +111,7 @@ const menuController = {
         }
     },
 
-    /**
-     * Настраивает команды бота
-     */
+
     setupBotCommands: () => {
         const commands = [
             { command: '/start', description: 'Начать работу с ботом' },

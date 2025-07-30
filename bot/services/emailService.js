@@ -82,15 +82,15 @@ export const sendTicketsToCustomer = async (userEmail, order, userTickets) => {
         });
 
         const mailOptions = {
-            from: '" Развлекательный клуб Француз" <zakaz@dali-khinkali.ru>',
+            from: '" Развлекательный комплекс Француз" <zakaz@dali-khinkali.ru>',
             to: userEmail,
-            subject: `Ваши билеты в Развлекательный клуб "Француз"`,
+            subject: `Ваши билеты в развлекательный комплекс "Француз"`,
             html: `
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Ваши билеты в клуб "Француз"</title>
+    <title>Ваши билеты в развлекательный комплекс "Француз"</title>
     <style>
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -163,7 +163,7 @@ export const sendTicketsToCustomer = async (userEmail, order, userTickets) => {
 </head>
 <body>
     <div class="header">
-        <div class="logo">Развлекательный клуб "Француз"</div>
+        <div class="logo">Развлекательный комплекс "Француз"</div>
         <h1 style="margin: 0; font-size: 22px;">Ваши билеты</h1>
         <p style="margin-top: 5px; color: #777;">Благодарим за покупку!</p>
     </div>
@@ -200,8 +200,8 @@ export const sendTicketsToCustomer = async (userEmail, order, userTickets) => {
     
     <div class="footer">
         <p>Если у вас есть вопросы, ответьте на это письмо.</p>
-        <p>Ждем вас в Развлекательном клубе "Француз"!</p>
-        <p style="margin-top: 20px;">© ${new Date().getFullYear()} Развлекательный клуб "Француз". Все права защищены.</p>
+        <p>Ждем вас в развлекательном комплексе "Француз"!</p>
+        <p style="margin-top: 20px;">© ${new Date().getFullYear()} Развлекательный комплекс "Француз". Все права защищены.</p>
     </div>
 </body>
 </html>
@@ -267,9 +267,9 @@ export const notifyAdminAboutOrder = async (order, userTickets) => {
         });
 
         const mailOptions = {
-            from: '"Клуб Француз" <zakaz@dali-khinkali.ru>',
+            from: '"Развлекательный комплекс Француз" <zakaz@dali-khinkali.ru>',
             to: ADMIN_EMAIL,
-            subject: `Новый заказ №${order.id} в клубе "Француз"`,
+            subject: `Новый заказ №${order.id} в РК "Француз"`,
             html: `
 <!DOCTYPE html>
 <html>
