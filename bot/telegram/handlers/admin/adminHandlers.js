@@ -4,6 +4,7 @@ import { AdminEventManager } from './AdminEventManager.js';
 import { EventWizard } from './eventWizzard.js';
 import EventService from '../../../services/eventsService.js';
 import { adminPanelController } from './adminPanel.js';
+import { adminRefundHandler } from './AdminRefundPanel.js';
 import menuController from '../mainMenu.js';
 
 const eventManager = new AdminEventManager(bot, EventService, userStates);
@@ -111,6 +112,9 @@ export const setupAdminHandlers = () => {
                 case 'admin_full_stats':
                     await adminPanelController.getFullStatistics(chatId);
                     break;
+                // case 'admin_refund':
+                //     await adminRefundHandler.showRefundMenu(chatId);
+                //     break;
 
                 default:
                     await bot.answerCallbackQuery(callbackQuery.id, {

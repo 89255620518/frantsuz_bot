@@ -5,99 +5,137 @@ import { bot } from '../../botInstance.js';
 import { userStates } from '../../../state.js';
 import { ButtonTrackingService } from '../../../services/ButtonTrackingService.js';
 
-// Выносим функции форматирования в начало модуля
+// Улучшенные функции форматирования с HTML
 const formatAdminMessage = (eventsStats, customersData, generalStats, buttonStats) => {
-    let message = '✨ ПАНЕЛЬ АДМИНИСТРАТОРА ✨\n\n';
-    
-    message += '📊 ОБЩАЯ СТАТИСТИКА\n';
-    message += '┌──────────────────────────────┐\n';
-    message += `│ 🎫 Всего билетов: ${generalStats.total.toString().padEnd(8)} │\n`;
-    message += `│ ✅ Использовано:  ${generalStats.used.toString().padEnd(8)} │\n`;
-    message += `│ 🔥 Активные:      ${generalStats.active.toString().padEnd(8)} │\n`;
-    message += `│ ⏳ Ожидают оплаты:${generalStats.pending.toString().padEnd(8)} │\n`;
-    message += '└──────────────────────────────┘\n\n';
+    let message = `
+<b>✨ ПАНЕЛЬ АДМИНИСТРАТОРА ✨</b>
 
-    message += '🖱 СТАТИСТИКА КЛИКОВ\n';
-    message += '┌──────────────────────────────┐\n';
-    message += `│ 👆 Всего кликов: ${buttonStats.totalClicks.toString().padEnd(8)} │\n`;
-    message += `│ 🎯 Уникальных кнопок: ${buttonStats.uniqueButtons.toString().padEnd(4)} │\n`;
-    message += '├──────────────────────────────┤\n';
+<b>📊 ОБЩАЯ СТАТИСТИКА БИЛЕТОВ</b>
+<pre>┌──────────────────────────────┐
+│                              │
+│  🎫  Всего продано:  <b>${generalStats.total.toString().padEnd(6)}</b> │
+│  ✅  Использовано:   <b>${generalStats.used.toString().padEnd(6)}</b> │
+│  🔥  Активные:       <b>${generalStats.active.toString().padEnd(6)}</b> │
+│  💰  Оплаченные:     <b>${generalStats.paid || generalStats.total - generalStats.pending}</b>     │
+│                              │
+└──────────────────────────────┘</pre>
 
-    const topButtons = [...buttonStats.allButtons].sort((a, b) => b.count - a.count).slice(0, 5);
-    topButtons.forEach(button => {
-        message += `│ 🔘 ${button.buttonId.padEnd(15)} ${button.count.toString().padEnd(5)} │\n`;
-    });
-    message += '└──────────────────────────────┘\n\n';
+<b>🖱 СТАТИСТИКА ВЗАИМОДЕЙСТВИЙ</b>
+<pre>┌──────────────────────────────┐
+│  👆  Всего кликов:    <b>${String(buttonStats.totalClicks).padStart(6)}</b>  │
+│  🎯  Уник. кнопок:    <b>${String(buttonStats.uniqueButtons).padStart(6)}</b>  │
+├──────────────────────────────┤
+│        <b>ТОП-5 КНОПОК</b>        │
+├────────────────┬─────────────┤
+${[...buttonStats.allButtons]
+  .sort((a, b) => b.count - a.count)
+  .slice(0, 5)
+  .map(button => `│  🔘 <b>${button.buttonId.padEnd(12)}</b> │ <b>${String(button.count).padStart(9)}</b> │`)
+  .join('\n')}
+└────────────────┴─────────────┘</pre>`;
 
-    message += '🎭 МЕРОПРИЯТИЯ\n';
+    // Блок мероприятий
+    message += `<b> 🎭 АКТИВНЫЕ МЕРОПРИЯТИЯ</b>`;
     eventsStats.forEach(event => {
-        message += `\n🎪 ${event.title}\n`;
-        message += '┌──────────────────────────────┐\n';
-        message += `│ 🎫 Всего: ${event.total.toString().padEnd(8)} │ 🏷 Использовано ${event.used.toString().padEnd(5)} │\n`;
-        message += `│ 🟢 Активные: ${event.active.toString().padEnd(6)} │ 💰 Оплачено ${event.paid.toString().padEnd(8)} │\n`;
-        message += '└──────────────────────────────┘\n';
+        const eventDate = new Date(event.date);
+        const formattedDate = [
+            String(eventDate.getDate()).padStart(2, '0'),
+            String(eventDate.getMonth() + 1).padStart(2, '0'),
+            eventDate.getFullYear()
+        ].join('.');
+
+        message += `
+        
+<b>🎪 ${event.title} ─ ${formattedDate}</b>
+<pre>┌────────────────────┬───────────────┐
+│ 🎫 Всего билетов  │ <b>${event.total.toString().padEnd(13)}</b> │
+│ ✅ Использовано   │ <b>${event.used.toString().padEnd(13)}</b> │
+│ 🔥 Активные       │ <b>${event.active.toString().padEnd(13)}</b> │
+│ 💰 Оплачено       │ <b>${event.paid.toString().padEnd(13)}</b> │
+└────────────────────┴───────────────┘</pre>`;
     });
 
-    message += `\n👥 ПОКУПАТЕЛИ (${customersData.length})\n`;
+    // Блок покупателей
+    message += `\n<b>👥 ТОП-5 ПОКУПАТЕЛЕЙ (всего: ${customersData.length})</b>`;
     customersData.slice(0, 5).forEach((customer, index) => {
-        message += `\n${index + 1}. 👤 ${customer.first_name} ${customer.last_name}\n`;
-        message += `   📞 ${customer.phone || 'Не указан'}\n`;
-        message += `   📧 ${customer.email || 'Не указан'}\n`;
-        message += `   🎟 Билетов: ${customer.tickets_count} шт | 🛒 Заказов: ${customer.orders_count}\n`;
+        message += `
+        
+${index + 1}. <b>${customer.first_name} ${customer.last_name}</b>
+   📞 <i>${customer.phone || 'Не указан'}</i> | 📧 <i>${customer.email || 'Не указан'}</i>
+   🎟 Билетов: <b>${customer.tickets_count}</b> | 🛒 Заказов: <b>${customer.orders_count}</b>
+   <i>───────────────────────────</i>`;
     });
 
     if (customersData.length > 5) {
-        message += `\n...и ещё ${customersData.length - 5} покупателей`;
+        message += `\n\n...и ещё <b>${customersData.length - 5}</b> покупателей`;
     }
 
     return message;
 };
 
 const formatFullStatsMessage = (eventsStats, customersData, generalStats, buttonStats) => {
-    let message = '📈 ПОЛНАЯ СТАТИСТИКА СИСТЕМЫ 📉\n\n';
+    let message = `<b>📈 ПОЛНАЯ СТАТИСТИКА СИСТЕМЫ 📉</b>
 
-    message += '📊 ОБЩАЯ СТАТИСТИКА\n';
-    message += '┌──────────────────────────────┐\n';
-    message += `│ 🎫 Всего билетов: ${generalStats.total.toString().padEnd(8)} │\n`;
-    message += `│ ✅ Использовано:  ${generalStats.used.toString().padEnd(8)} │\n`;
-    message += `│ 🔥 Активные:      ${generalStats.active.toString().padEnd(8)} │\n`;
-    message += `│ ⏳ Ожидают оплаты:${generalStats.pending.toString().padEnd(8)} │\n`;
-    message += '└──────────────────────────────┘\n\n';
+<b>📊 ДЕТАЛИЗИРОВАННАЯ СТАТИСТИКА</b>
+<pre>┌────────────────────────────────────┐
+│                                    │
+│  🎫  Всего билетов продано: <b>${generalStats.total.toString().padEnd(6)}</b>  │
+│  ✅  Использовано билетов:  <b>${generalStats.used.toString().padEnd(6)}</b>  │
+│  🔥  Активных билетов:      <b>${generalStats.active.toString().padEnd(6)}</b>  │
+│  💰  Оплаченных билетов:    <b>${generalStats.paid || generalStats.total - generalStats.pending}</b>  │
+│  ⏳  Ожидающих оплаты:      <b>${generalStats.pending.toString().padEnd(6)}</b>  │
+│                                    │
+└────────────────────────────────────┘</pre>
 
-    message += '🖱 ПОЛНАЯ СТАТИСТИКА КЛИКОВ\n';
-    message += '┌──────────────────────────────┐\n';
-    message += `│ 👆 Всего кликов: ${buttonStats.totalClicks.toString().padEnd(8)} │\n`;
-    message += `│ 🎯 Уникальных кнопок: ${buttonStats.uniqueButtons.toString().padEnd(4)} │\n`;
-    message += '├──────────────────────────────┤\n';
+<b>🖱 ПОЛНАЯ СТАТИСТИКА КНОПОК</b>
+<pre>┌──────────────────┬─────────────┐
+│ Всего кликов     │ <b>${buttonStats.totalClicks.toString().padEnd(11)}</b> │
+│ Уникальных кнопок │ <b>${buttonStats.uniqueButtons.toString().padEnd(11)}</b> │
+├──────────────────┴─────────────┤
+│       <b>ВСЕ КНОПКИ ПО АЛФАВИТУ</b>    │
+├──────────────────┬─────────────┤
+${buttonStats.allButtons.sort((a, b) => a.buttonId.localeCompare(b.buttonId)).map(button => 
+`│ <b>${button.buttonId.padEnd(16)}</b> │ <b>${button.count.toString().padEnd(11)}</b> │`).join('\n')}
+└──────────────────┴─────────────┘</pre>
+`;
 
-    buttonStats.allButtons.sort((a, b) => a.buttonId.localeCompare(b.buttonId)).forEach(button => {
-        message += `│ 🔘 ${button.buttonId.padEnd(15)} ${button.count.toString().padEnd(5)} │\n`;
-    });
-    message += '└──────────────────────────────┘\n\n';
-
-    message += '🎭 ДЕТАЛЬНАЯ СТАТИСТИКА МЕРОПРИЯТИЙ\n';
+    // Детальная статистика мероприятий
+    message += `<b>🎭 ДЕТАЛЬНАЯ СТАТИСТИКА МЕРОПРИЯТИЙ</b>`;
     eventsStats.forEach(event => {
-        message += `\n🎪 ${event.title}\n`;
-        message += '┌──────────────────────────────┐\n';
-        message += `│ 🎫 Всего билетов: ${event.total.toString().padEnd(8)} │\n`;
-        message += `│ ✅ Использовано:  ${event.used.toString().padEnd(8)} │\n`;
-        message += `│ 🔥 Активные:      ${event.active.toString().padEnd(8)} │\n`;
-        message += `│ 💰 Оплачено:      ${event.paid.toString().padEnd(8)} │\n`;
-        message += '└──────────────────────────────┘\n';
+        const eventDate = new Date(event.date);
+        const formattedDate = [
+            String(eventDate.getDate()).padStart(2, '0'),
+            String(eventDate.getMonth() + 1).padStart(2, '0'),
+            eventDate.getFullYear()
+        ].join('.');
+
+        message += `
+        
+<b>🎪 ${event.title} ─ ${formattedDate}</b>
+<pre>┌──────────────────────────────┐
+│ 🎫 Всего билетов: <b>${event.total.toString().padEnd(12)}</b> │
+│ ✅ Использовано:  <b>${event.used.toString().padEnd(12)}</b> │
+│ 🔥 Активные:      <b>${event.active.toString().padEnd(12)}</b> │
+│ 💰 Оплачено:      <b>${event.paid.toString().padEnd(12)}</b> │
+└──────────────────────────────┘</pre>`;
     });
 
-    message += `\n👥 ПОЛНЫЙ СПИСОК ПОКУПАТЕЛЕЙ (${customersData.length})\n`;
+    // Полный список покупателей
+    message += `\n<b>👥 ПОЛНЫЙ СПИСОК ПОКУПАТЕЛЕЙ (${customersData.length})</b>`;
     customersData.forEach((customer, index) => {
-        message += `\n${index + 1}. 👤 ${customer.first_name} ${customer.last_name}\n`;
-        message += `   📞 ${customer.phone || 'Не указан'}\n`;
-        message += `   📧 ${customer.email || 'Не указан'}\n`;
-        message += `   🎟 Билетов: ${customer.tickets_count} шт | 🛒 Заказов: ${customer.orders_count}\n`;
-        message += `   🆔 ID пользователя: ${customer.user_id}\n`;
+        message += `
+        
+${index + 1}. <b>${customer.first_name} ${customer.last_name}</b>
+   📞 <i>${customer.phone || 'Не указан'}</i> | 📧 <i>${customer.email || 'Не указан'}</i>
+   🎟 Билетов: <b>${customer.tickets_count}</b> | 🛒 Заказов: <b>${customer.orders_count}</b>
+   🆔 ID: <code>${customer.user_id}</code>
+   <i>───────────────────────────</i>`;
     });
 
     return message;
 };
 
+// Остальная часть кода остается без изменений
 export const adminPanelController = {
     handleAdminPanel: async (chatId) => {
         try {
@@ -116,6 +154,7 @@ export const adminPanelController = {
             const message = formatAdminMessage(eventsStats, customersData, generalStats, buttonStats);
 
             await bot.sendMessage(chatId, message, {
+                parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
                         [
@@ -173,6 +212,7 @@ export const adminPanelController = {
                 return {
                     id: event.id,
                     title: event.title,
+                    date: event.event_date,
                     total: userTickets.length,
                     used: userTickets.filter(t => t.is_used).length,
                     active: userTickets.filter(t => !t.is_used && t.payment_status === 'paid').length,
@@ -239,11 +279,12 @@ export const adminPanelController = {
                 total: paidTickets.length,
                 used: paidTickets.filter(t => t.is_used).length,
                 active: paidTickets.filter(t => !t.is_used).length,
-                pending: allTickets.filter(t => t.payment_status === 'pending').length
+                pending: allTickets.filter(t => t.payment_status === 'pending').length,
+                paid: paidTickets.length
             };
         } catch (error) {
             console.error('Error calculating general stats:', error);
-            return { total: 0, used: 0, active: 0, pending: 0 };
+            return { total: 0, used: 0, active: 0, pending: 0, paid: 0 };
         }
     },
 
@@ -261,6 +302,7 @@ export const adminPanelController = {
             const message = formatFullStatsMessage(eventsStats, customersData, generalStats, buttonStats);
 
             await bot.sendMessage(chatId, message, {
+                parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
                         [

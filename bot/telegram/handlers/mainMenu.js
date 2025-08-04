@@ -60,7 +60,8 @@ const menuController = {
             if (isAdmin) {
                 menuButtons.push([
                     { text: '🛠️ Управление билетами', callback_data: 'admin_tickets' },
-                    { text: '⚙️ Статистика', callback_data: 'admin_panel' }
+                    { text: '⚙️ Статистика', callback_data: 'admin_panel' },
+                    { text: '🔙 Возвраты', callback_data: 'admin_refund' }
                 ]);
             }
 
