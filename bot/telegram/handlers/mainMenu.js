@@ -108,7 +108,7 @@ const menuController = {
         }
     },
 
-    setupBotCommands: () => {
+    setupBotCommands: async () => {
         const commands = [
             { command: '/start', description: 'Начать работу с ботом' },
             { command: '/menu', description: 'Меню бара и кухни' },
@@ -142,12 +142,13 @@ const menuController = {
             }
         });
 
-        return bot.setMyCommands(commands)
-            .then(() => console.log('Командное меню успешно настроено'))
-            .catch(err => {
-                console.error('Ошибка настройки команд:', err);
-                throw err;
-            });
+        try {
+            await bot.setMyCommands(commands);
+            return console.log('Командное меню успешно настроено');
+        } catch (err) {
+            console.error('Ошибка настройки команд:', err);
+            throw err;
+        }
     },
 
     // Обработчик для inline-кнопок
@@ -162,7 +163,6 @@ const menuController = {
                 if (callbackQuery.data === query) {
                     try {
                         const dbUser = await ensureUserRegistered(callbackQuery.message);
-                        await menuController.showMainMenu(callbackQuery.message.chat.id, dbUser.is_admin);
                     } catch (error) {
                         console.error(`Callback ${query} error:`, error);
                         await bot.answerCallbackQuery(callbackQuery.id, {

@@ -1,11 +1,8 @@
 // AdminRefundHandler.js
 import { bot } from '../../botInstance.js';
-import { userStates } from '../../../state.js';
 import { Ticket } from '../../../models/Event.js';
 import { UserTicket } from '../../../models/UserTicket.js';
 import RefundService from '../../../services/RefundService.js';
-import PaymentService from '../../../services/paykeeper.js';
-import { Op } from 'sequelize';
 
 const refundService = new RefundService();
 
@@ -39,7 +36,9 @@ export class AdminRefundHandler {
                 include: [{
                     model: UserTicket,
                     as: 'user_tickets',
-                    where: { payment_status: 'paid' },
+                    where: { 
+                        payment_status: 'paid'
+                    },
                     required: true
                 }],
                 order: [['event_date', 'DESC']]
@@ -88,7 +87,9 @@ export class AdminRefundHandler {
                 include: [{
                     model: UserTicket,
                     as: 'user_tickets',
-                    where: { payment_status: 'paid' }
+                    where: { 
+                        payment_status: 'paid'
+                    }
                 }]
             });
 
@@ -105,8 +106,9 @@ export class AdminRefundHandler {
             await bot.editMessageText(
                 `⚠️ *ПОДТВЕРЖДЕНИЕ ПОЛНОГО ВОЗВРАТА* ⚠️\n\n` +
                 `📌 *${event.title}*\n` +
-                `📅 Дата: ${eventDate.toLocaleString()}\n` +
-                `🎫 Билетов: ${event.user_tickets.length}\n` +
+                `📅 Дата мероприятия: ${eventDate.toLocaleString()}\n` +
+                `🎫 Количество билетов: ${event.user_tickets.length}\n` +
+                `💰 Стоимость билета: ${ticketPrice} ₽\n` +
                 `💰 Общая сумма: ${totalAmount} ₽\n` +
                 `📌 Статус: ${isPastEvent ? '🔴 Прошедшее' : '🟢 Будущее'}\n\n` +
                 `*Это действие нельзя отменить! Все средства будут возвращены покупателям.*`,
@@ -148,31 +150,15 @@ export class AdminRefundHandler {
                 reply_markup: { inline_keyboard: [] }
             });
 
-            const result = await refundService.fullEventRefund(eventId);
+            const refundResult = await refundService.refundEventTickets(eventId);
 
-            if (result.success) {
-                await bot.editMessageText(
-                    `✅ *ПОЛНЫЙ ВОЗВРАТ УСПЕШНО ВЫПОЛНЕН*\n\n` +
-                    `📌 Мероприятие: ${result.eventTitle}\n` +
-                    `🎫 Возвращено билетов: ${result.refundedCount}\n` +
-                    `💰 Общая сумма: ${result.totalAmount} ₽\n\n` +
-                    `📩 Уведомления отправлены покупателям.`,
-                    {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '◀️ В меню возвратов', callback_data: 'admin_refund' }]
-                            ]
-                        }
-                    }
-                );
-            } else {
-                await bot.editMessageText(
+            if (!refundResult.success) {
+                const errors = refundResult.errors || [];
+                return await bot.editMessageText(
                     `❌ *ОШИБКА ВОЗВРАТА*\n\n` +
-                    `Причина: ${result.error || 'Неизвестная ошибка'}\n\n` +
-                    `Попробуйте повторить позже или обратитесь в поддержку PayKeeper.`,
+                    `Успешно возвращено: ${refundResult.refundedTickets || 0} билетов\n` +
+                    `Не удалось вернуть: ${errors.length} платежей\n\n` +
+                    `Первая ошибка: ${errors[0]?.error || 'Неизвестная ошибка'}`,
                     {
                         chat_id: chatId,
                         message_id: messageId,
@@ -186,15 +172,43 @@ export class AdminRefundHandler {
                     }
                 );
             }
+
+            const event = await Ticket.findByPk(eventId);
+
+            await bot.editMessageText(
+                `✅ *ПОЛНЫЙ ВОЗВРАТ УСПЕШНО ВЫПОЛНЕН*\n\n` +
+                `📌 Мероприятие: ${event.title}\n` +
+                `💳 Возвращено платежей: ${refundResult.refundedPayments}\n` +
+                `🎫 Возвращено билетов: ${refundResult.refundedTickets}\n` +
+                `💰 Общая сумма: ${refundResult.totalAmount} ₽\n\n` +
+                `📩 Уведомления отправлены покупателям.`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '◀️ В меню возвратов', callback_data: 'admin_refund' }]
+                        ]
+                    }
+                }
+            );
+
         } catch (error) {
             console.error('Process refund error:', error);
             await bot.editMessageText(
                 '⚠️ *КРИТИЧЕСКАЯ ОШИБКА*\n\n' +
-                'При выполнении возврата произошла ошибка. Пожалуйста, попробуйте позже или проверьте логи системы.',
+                'При выполнении возврата произошла ошибка. Пожалуйста, попробуйте позже или проверьте логи системы.\n\n' +
+                `Ошибка: ${error.message}`,
                 {
                     chat_id: chatId,
                     message_id: messageId,
-                    parse_mode: 'Markdown'
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '◀️ В меню возвратов', callback_data: 'admin_refund' }]
+                        ]
+                    }
                 }
             );
         }

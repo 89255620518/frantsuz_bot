@@ -3,7 +3,7 @@ import { Ticket } from '../../../models/Event.js';
 import { Order } from '../../../models/Orders.js';
 import { bot } from '../../botInstance.js';
 import { userStates } from '../../../state.js';
-import { ButtonTrackingService } from '../../../services/ButtonTrackingService.js';
+import { ButtonTrackingService } from '../../../services/buttonTrackingService.js';
 
 // Улучшенные функции форматирования с HTML
 const formatAdminMessage = (eventsStats, customersData, generalStats, buttonStats) => {

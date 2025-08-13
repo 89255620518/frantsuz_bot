@@ -16,6 +16,10 @@ class UserTicket extends Model {
             foreignKey: 'user_ticket_id',
             as: 'order_item'
         });
+        this.hasMany(models.RefundTicket, {
+            foreignKey: 'user_ticket_id',
+            as: 'refund_tickets',
+        });
     }
 
     static generateTicketNumber() {

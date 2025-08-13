@@ -12,6 +12,13 @@ class Ticket extends Model {
             foreignKey: 'ticket_id',
             as: 'user_tickets'
         });
+
+        this.belongsToMany(models.OrderItem, {
+            through: models.UserTicket,
+            foreignKey: 'ticket_id',
+            otherKey: 'id',
+            as: 'order_items'
+        });
     }
 
     // Генерация QR-кода и отправка в Telegram (без сохранения в файл)

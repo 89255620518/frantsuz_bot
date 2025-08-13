@@ -13,6 +13,13 @@ class Order extends Model {
             as: 'items'
         });
 
+        this.belongsToMany(models.UserTicket, {
+            through: models.OrderItem,
+            foreignKey: 'order_id',
+            otherKey: 'user_ticket_id',
+            as: 'tickets'
+        });
+
     }
 }
 

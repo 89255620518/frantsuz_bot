@@ -335,8 +335,8 @@ export class AdminEventManager {
                 await this.showMenu(chatId);
                 return;
             }
-
             if (data.startsWith('edit_skip_')) {
+                ч
                 const field = data.replace('edit_skip_', '');
                 const nextField = this.getNextField(field);
 

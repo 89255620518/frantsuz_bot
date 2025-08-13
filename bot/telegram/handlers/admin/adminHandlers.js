@@ -4,7 +4,6 @@ import { AdminEventManager } from './AdminEventManager.js';
 import { EventWizard } from './eventWizzard.js';
 import EventService from '../../../services/eventsService.js';
 import { adminPanelController } from './adminPanel.js';
-import { adminRefundHandler } from './AdminRefundPanel.js';
 import menuController from '../mainMenu.js';
 
 const eventManager = new AdminEventManager(bot, EventService, userStates);
