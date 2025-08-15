@@ -34,12 +34,22 @@ class RefundClientService {
             okpo, 
             ogrn, 
             refund_reason,
-            refund_amount  // Получаем сумму из переданных данных
+            refund_amount
         } = refundData;
 
         const transaction = await Refund.sequelize.transaction();
 
         try {
+            // Проверяем, есть ли уже заявка на эти билеты
+            const existingRefunds = await RefundTicket.findAll({
+                where: { user_ticket_id: ticketIds },
+                transaction
+            });
+
+            if (existingRefunds.length > 0) {
+                throw new Error('На некоторые билеты уже подана заявка на возврат');
+            }
+
             const tickets = await UserTicket.findAll({
                 where: { id: ticketIds },
                 transaction,
@@ -55,7 +65,7 @@ class RefundClientService {
                 throw new Error('Некоторые билеты не принадлежат пользователю');
             }
 
-            // Используем переданную сумму возврата вместо расчета
+            // Создаем заявку на возврат
             const refund = await Refund.create({
                 user_id: userId,
                 email,
@@ -69,10 +79,11 @@ class RefundClientService {
                 kpp,
                 okpo,
                 ogrn,
-                refund_amount,  // Используем переданное значение
-                refund_reason    // Используем переданную причину
+                refund_amount,
+                refund_reason
             }, { transaction });
 
+            // Создаем связи между заявкой и билетами
             await Promise.all(tickets.map(ticket => 
                 RefundTicket.create({
                     refund_id: refund.id,
@@ -82,6 +93,16 @@ class RefundClientService {
                 }, { transaction })
             ));
 
+            // Обновляем статус билетов на "canceled"
+            await UserTicket.update(
+                { payment_status: 'canceled' },
+                { 
+                    where: { id: ticketIds },
+                    transaction
+                }
+            );
+
+            // Отправляем уведомления
             await Promise.all([
                 this.sendRefundEmailToAdmin(refund, tickets),
                 this.sendClientConfirmation(refund, tickets)
@@ -215,7 +236,7 @@ class RefundClientService {
                     <li><strong>Дата подачи:</strong> ${formatDate(refund.created_at)}</li>
                 </ul>
                 
-                <p>Мы обработаем вашу заявку в течение 3-5 рабочих дней.</p>
+                <p>Мы обработаем вашу заявку в течение 30 рабочих дней.</p>
                 
                 <p>С уважением,<br>Служба поддержки</p>
                 `

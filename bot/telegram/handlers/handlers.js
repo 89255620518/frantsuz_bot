@@ -24,6 +24,7 @@ import {
 import { showContacts } from './contactsHandler.js';
 import { setupMyTicketsHandler, handleMyTicketsCommand } from './refund/myTickets.js';
 import { setupRefundHandlers } from './refund/refundClient.js';
+import refundButton from './refund/buttonRefund.js';
 import {
     handleAdminMessages,
     setupAdminHandlers,
@@ -65,6 +66,7 @@ export const setupEventHandlers = () => {
     setupAdminHandlers();
     setupMyTicketsHandler();
     setupRefundHandlers();
+    refundButton.init();
 
     bot.onText(/\/start/, async (msg) => {
         const chatId = msg.chat.id;
@@ -229,6 +231,10 @@ export const setupEventHandlers = () => {
         await handleMyTicketsCommand(msg);
     });
 
+    bot.onText(/\/create_refund/, async (msg) => {
+        await buttonTracker.trackButtonClick('Оформить возврат');
+    });
+
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         if (!msg?.chat?.id) return;
@@ -367,6 +373,15 @@ export const setupEventHandlers = () => {
                     buttonType='Оплата';
                     await pay.sendPay(chatId, bot);
                     break;
+
+                case data === 'create_refund':
+                    buttonType='Оформить возврат';
+                    break;
+                
+                case data === 'my_tickets':
+                    buttonType='Мои билеты';
+                    break;
+
 
                 case data === 'consult_refund':
                     await bot.sendMessage(

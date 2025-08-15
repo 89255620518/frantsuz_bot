@@ -1,5 +1,6 @@
 import { bot } from '../../botInstance.js';
 import { UserTicket } from '../../../models/UserTicket.js';
+import { RefundTicket } from '../../../models/Refund.js';
 import { Ticket } from '../../../models/Event.js';
 import { ensureUserRegistered } from '../mainMenu.js';
 
@@ -134,6 +135,10 @@ async function sendTicketDesign(chatId, userTicket) {
             return;
         }
 
+        const hasRefundRequest = await RefundTicket.findOne({
+            where: { user_ticket_id: userTicket.id }
+        });
+
         const ticket = userTicket.ticket;
         const qrCodeBase64 = userTicket.qr_code;
         
@@ -151,8 +156,8 @@ async function sendTicketDesign(chatId, userTicket) {
         const buttons = [
             [
                 { 
-                    text: '🔄 Оформить возврат', 
-                    callback_data: `refund_ticket_${userTicket.id}`
+                    text: hasRefundRequest ? '✅ Заявка на возврат' : '🔄 Оформить возврат', 
+                    callback_data: hasRefundRequest ? 'already_refunded' : `refund_ticket_${userTicket.id}`
                 },
                 { 
                     text: '📝 Правила возврата', 

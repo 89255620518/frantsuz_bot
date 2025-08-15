@@ -1,6 +1,7 @@
 import { bot } from '../../botInstance.js';
 import { UserTicket } from '../../../models/UserTicket.js';
 import { Ticket } from '../../../models/Event.js';
+import { RefundTicket } from '../../../models/Refund.js';
 import { ensureUserRegistered } from '../mainMenu.js';
 import RefundClientService from '../../../services/RefundClientService.js';
 import { userStates } from '../../../state.js';
@@ -40,6 +41,18 @@ export async function handleRefundTicket(callbackQuery) {
         
         if (!ticketId) {
             throw new Error('Не удалось получить ID билета');
+        }
+
+        const existingRefund = await RefundTicket.findOne({
+            where: { user_ticket_id: ticketId }
+        });
+
+        if (existingRefund) {
+            return await bot.sendMessage(
+                chatId,
+                '⚠️ На этот билет уже подана заявка на возврат',
+                { reply_to_message_id: callbackQuery.message.message_id }
+            );
         }
 
         // Получаем полную информацию о билете
