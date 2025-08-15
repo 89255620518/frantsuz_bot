@@ -1,4 +1,3 @@
-
 import { bot } from '../botInstance.js';
 import { UserTicket } from '../../models/UserTicket.js';
 import { Ticket } from '../../models/Event.js';
@@ -33,9 +32,11 @@ export async function processTicket(chatId, ticketNumber) {
                 {
                     model: OrderItem,
                     as: 'order_item',
+                    required: false, // Разрешаем отсутствие связи
                     include: [{
                         model: Order,
                         as: 'order',
+                        required: false, // Разрешаем отсутствие связи
                         attributes: ['first_name', 'last_name', 'email', 'phone', 'status']
                     }]
                 }
@@ -78,18 +79,28 @@ export async function processTicket(chatId, ticketNumber) {
 }
 
 function buildTicketMessage(userTicket) {
+    let buyerInfo = '';
+    
+    // Если есть информация о заказе
+    if (userTicket.order_item && userTicket.order_item.order) {
+        const order = userTicket.order_item.order;
+        buyerInfo = `👤 *Данные покупателя:*\n` +
+                   `• Имя: ${order.first_name || 'Не указано'} ${order.last_name || 'Не указано'}\n` +
+                   `• Email: ${order.email || 'Не указан'}\n` +
+                   `• Телефон: ${order.phone || 'Не указан'}\n\n`;
+    } else {
+        buyerInfo = 'ℹ️ Информация о заказе отсутствует\n\n';
+    }
+
     return `🎟️ *Информация о билете* 🎟️\n\n` +
-        `📌 *Номер билета:* ${userTicket.ticket_number}\n` +
-        `📌 *Мероприятие:* ${userTicket.ticket.title}\n` +
-        `📅 *Дата:* ${formatDate(userTicket.ticket.event_date)}\n` +
-        `📍 *Место:* ${userTicket.ticket.event_location}\n` +
-        `💰 *Стоимость:* ${userTicket.ticket.price} руб.\n\n` +
-        `👤 *Данные покупателя:*\n` +
-        `• Имя: ${userTicket.order_item.order.first_name} ${userTicket.order_item.order.last_name}\n` +
-        `• Email: ${userTicket.order_item.order.email}\n` +
-        `• Телефон: ${userTicket.order_item.order.phone}\n\n` +
-        `🔄 *Статус оплаты:* ${userTicket.payment_status === 'paid' ? '✅ Оплачен' : '❌ Не оплачен'}\n` +
-        `🎭 *Статус билета:* ${userTicket.is_used ? '❌ Использован' : '✅ Активен'}`;
+           `📌 *Номер билета:* ${userTicket.ticket_number}\n` +
+           `📌 *Мероприятие:* ${userTicket.ticket.title}\n` +
+           `📅 *Дата:* ${formatDate(userTicket.ticket.event_date)}\n` +
+           `📍 *Место:* ${userTicket.ticket.event_location}\n` +
+           `💰 *Стоимость:* ${userTicket.ticket.price} руб.\n\n` +
+           buyerInfo +
+           `🔄 *Статус оплаты:* ${userTicket.payment_status === 'paid' ? '✅ Оплачен' : '❌ Не оплачен'}\n` +
+           `🎭 *Статус билета:* ${userTicket.is_used ? '❌ Использован' : '✅ Активен'}`;
 }
 
 async function handleMarkUsed(callbackQuery, chatId, data) {

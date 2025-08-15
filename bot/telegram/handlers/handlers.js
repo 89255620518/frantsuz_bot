@@ -22,6 +22,8 @@ import {
     backToEvent,
 } from './event/ticketsHandler.js';
 import { showContacts } from './contactsHandler.js';
+import { setupMyTicketsHandler, handleMyTicketsCommand } from './refund/myTickets.js';
+import { setupRefundHandlers } from './refund/refundClient.js';
 import {
     handleAdminMessages,
     setupAdminHandlers,
@@ -61,6 +63,8 @@ export const setupEventHandlers = () => {
     setupQRScanner();
     menuController.setupBotCommands();
     setupAdminHandlers();
+    setupMyTicketsHandler();
+    setupRefundHandlers();
 
     bot.onText(/\/start/, async (msg) => {
         const chatId = msg.chat.id;
@@ -218,6 +222,11 @@ export const setupEventHandlers = () => {
         await buttonTracker.trackButtonClick('Контакты');
         const chatId = msg.chat.id;
         await showContacts(chatId);
+    });
+
+    bot.onText(/\/my_tickets/, async (msg) => {
+        await buttonTracker.trackButtonClick('Мои билеты');
+        await handleMyTicketsCommand(msg);
     });
 
     bot.on('callback_query', async (callbackQuery) => {

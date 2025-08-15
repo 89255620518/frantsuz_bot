@@ -5,6 +5,7 @@ import { EventWizard } from './eventWizzard.js';
 import EventService from '../../../services/eventsService.js';
 import { adminPanelController } from './adminPanel.js';
 import menuController from '../mainMenu.js';
+import { adminRefundHandler } from './AdminRefundPanel.js';
 
 const eventManager = new AdminEventManager(bot, EventService, userStates);
 const eventWizard = new EventWizard(bot, EventService, userStates);
@@ -111,9 +112,9 @@ export const setupAdminHandlers = () => {
                 case 'admin_full_stats':
                     await adminPanelController.getFullStatistics(chatId);
                     break;
-                // case 'admin_refund':
-                //     await adminRefundHandler.showRefundMenu(chatId);
-                //     break;
+                case 'admin_refund':
+                    await adminRefundHandler.showRefundMenu(chatId);
+                    break;
 
                 default:
                     await bot.answerCallbackQuery(callbackQuery.id, {
@@ -128,7 +129,7 @@ export const setupAdminHandlers = () => {
         } catch (error) {
             console.error('Admin callback handler error:', error);
             await bot.answerCallbackQuery(callbackQuery.id, {
-                text: '⚠️ Ошибка обработки',
+                // text: '⚠️ Ошибка обработки',
                 show_alert: true
             });
         }

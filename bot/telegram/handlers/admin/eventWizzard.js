@@ -313,7 +313,14 @@ export class EventWizard {
                 `📍 <b>Место:</b> ${newEvent.event_location}\n` +
                 `💰 <b>Цена:</b> ${newEvent.price} руб.\n\n` +
                 `🆔 <b>ID мероприятия:</b> <code>${newEvent.id}</code>`,
-                { parse_mode: 'HTML' }
+                { 
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: 'Вернуться в меню админа', callback_data: 'admin_tickets' }]
+                        ]
+                    }
+                }
             );
 
             return true;

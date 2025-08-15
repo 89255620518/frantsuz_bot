@@ -48,7 +48,7 @@ export class AdminRefundHandler {
                 return await bot.sendMessage(chatId, '❌ Нет мероприятий с оплаченными билетами', {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '◀️ Назад', callback_data: 'admin_panel' }]
+                            [{ text: '◀️ Назад', callback_data: 'back_to_command_menu' }]
                         ]
                     }
                 });
@@ -61,7 +61,7 @@ export class AdminRefundHandler {
                 }
             ]);
 
-            eventButtons.push([{ text: '◀️ Назад', callback_data: 'admin_panel' }]);
+            eventButtons.push([{ text: '◀️ Назад', callback_data: 'back_to_command_menu' }]);
 
             await bot.sendMessage(
                 chatId,

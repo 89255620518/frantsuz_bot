@@ -5,18 +5,20 @@ import { User } from '../../models/User.js';
 const menuShown = new Set();
 
 // Общая функция для проверки/регистрации пользователя
-async function ensureUserRegistered(msg) {
-    const chatId = msg.chat?.id;
-    const user = msg.from;
-
+export async function ensureUserRegistered(msgOrCallback) {
+    // Обрабатываем как обычное сообщение или callback_query
+    const chatId = msgOrCallback.chat?.id || msgOrCallback.message?.chat?.id;
+    const user = msgOrCallback.from || msgOrCallback;
+    
     if (!chatId || !user?.id) {
-        console.error('Invalid message structure:', msg);
+        console.error('Invalid message structure:', msgOrCallback);
         throw new Error('Не удалось получить данные профиля');
     }
 
     const result = await User.findOrCreateFromTelegram(user);
     if (!result?.user) throw new Error('User creation failed');
-    
+
+    console.log(result.user, 'result')
     return result.user;
 }
 
@@ -54,6 +56,10 @@ const menuController = {
                 [
                     { text: '📝 Правила оплаты', callback_data: 'pay_rules' },
                     { text: '↩️ Правила возврата', callback_data: 'refund' }
+                ],
+                [
+                    { text: '🔄 Оформить возврат', callback_data: 'create_refund' },
+                    { text: '🎟️ Мои билеты', callback_data: 'my_tickets'}
                 ]
             ];
 
@@ -123,6 +129,8 @@ const menuController = {
             { command: '/pay', description: 'Оплата' },
             { command: '/pay_rules', description: 'Правила оплаты' },
             { command: '/refund', description: 'Правила возврата' },
+            { command: '/create_refund', description: 'Оформить возврат' },
+            { command: '/my_tickets', description: 'Мои билеты' },
             { command: '/reserve', description: 'Бронирование' },
             { command: '/contacts', description: 'Контакты' }
         ];
@@ -154,15 +162,19 @@ const menuController = {
     // Обработчик для inline-кнопок
     setupInlineHandlers: () => {
         const callbackQueries = [
-            'show_tickets', 'pay', 'contacts', 'pay_rules', 'refund',
-            'admin_tickets', 'admin_panel'
+            'show_tickets', 'pay', 'contacts', 'pay_rules', 'refund', 'create_refund',
+            'admin_tickets', 'my_tickets', 'admin_panel'
         ];
 
         callbackQueries.forEach(query => {
             bot.on('callback_query', async (callbackQuery) => {
                 if (callbackQuery.data === query) {
                     try {
-                        const dbUser = await ensureUserRegistered(callbackQuery.message);
+                        const dbUser = await ensureUserRegistered({
+                            from: callbackQuery.from,
+                            chat: callbackQuery.message.chat
+                        });
+                        await menuController.showMainMenu(callbackQuery.message.chat.id, dbUser.is_admin);
                     } catch (error) {
                         console.error(`Callback ${query} error:`, error);
                         await bot.answerCallbackQuery(callbackQuery.id, {
