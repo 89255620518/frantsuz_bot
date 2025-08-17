@@ -231,8 +231,6 @@ export class AdminNotificationsHandler {
                 tickets.map(ticket => this.sendRefundNotification(ticket, event, refundType))
             );
 
-            console.log(results, 'res')
-
             const successCount = results.filter(r => r.success).length;
             const failedCount = results.length - successCount;
 
@@ -337,21 +335,230 @@ export class AdminNotificationsHandler {
             const formattedDate = eventDate.toLocaleString('ru-RU');
 
             // Уведомление для покупателя
-            let emailSubject, emailText, telegramText;
+            let emailSubject, emailHtml, telegramText;
 
             if (refundType === 'cancel') {
-                emailSubject = `Отмена мероприятия "${event.title}"`;
-                emailText = `Уважаемый(ая) ${order.last_name} ${order.first_name},\n\nК сожалению, мероприятие "${event.title}", запланированное на ${formattedDate}, отменено.\n\nДетали вашего заказа:\n- Количество билетов: ${quantity}\n- Номера билетов: ${allTicketNumbers}\n- Стоимость одного билета: ${ticketPrice} ₽\n- Общая сумма к возврату: ${totalAmount} ₽\n\nДля оформления возврата:\n1. Ответьте на это письмо\n2. Укажите реквизиты банковской карты для возврата\n3. Подтвердите номера билетов: ${allTicketNumbers}\n\nС уважением,\nРазвлекательный комплекс "Француз"`;
+                emailSubject = `❌ Отмена мероприятия "${event.title}"`;
+                
+                emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${emailSubject}</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .header {
+            background-color: #e74c3c;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 0 0 5px 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .ticket-info {
+            background-color: #f8f1f1;
+            padding: 15px;
+            border-left: 4px solid #e74c3c;
+            margin: 15px 0;
+        }
+        .refund-steps {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .refund-steps ol {
+            padding-left: 20px;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #777;
+            text-align: center;
+        }
+        .highlight {
+            font-weight: bold;
+            color: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>${event.title}</h2>
+        <p>Мероприятие отменено</p>
+    </div>
+    
+    <div class="content">
+        <p>Уважаемый(ая) ${order.last_name} ${order.first_name},</p>
+        
+        <p>К сожалению, мероприятие <span class="highlight">"${event.title}"</span>, запланированное на <span class="highlight">${formattedDate}</span>, отменено.</p>
+        
+        <div class="ticket-info">
+            <h3>Детали вашего заказа:</h3>
+            <p>🎫 Количество билетов: <span class="highlight">${quantity}</span></p>
+            <p>🔢 Номера билетов: <span class="highlight">${allTicketNumbers}</span></p>
+            <p>💰 Стоимость одного билета: <span class="highlight">${ticketPrice} ₽</span></p>
+            <p>💳 Общая сумма к возврату: <span class="highlight">${totalAmount} ₽</span></p>
+        </div>
+        
+        <div class="refund-steps">
+            <h3>Для оформления возврата:</h3>
+            <ol>
+                <li>Ответьте на это письмо</li>
+                <li>Укажите реквизиты банковской карты для возврата</li>
+                <li>Подтвердите номера билетов: <span class="highlight">${allTicketNumbers}</span></li>
+            </ol>
+        </div>
+        
+        <p>Мы приносим извинения за доставленные неудобства и надеемся на ваше понимание.</p>
+        
+        <p>С уважением,<br>
+        Команда развлекательного комплекса "Француз"</p>
+    </div>
+    
+    <div class="footer">
+        <p>Это письмо отправлено автоматически. Пожалуйста, не отвечайте на него напрямую.</p>
+    </div>
+</body>
+</html>
+                `;
                 
                 telegramText = `🔴 *Уведомление об отмене мероприятия*\n\n` +
                                `Мероприятие "${event.title}" (${formattedDate}) отменено.\n\n` +
                                `Ваши билеты:\n` +
                                `🎫 Номера: ${allTicketNumbers}\n` +
                                `💰 Сумма к возврату: ${totalAmount} ₽\n\n` +
-                               `Для возврата средств ответьте на это сообщение с реквизитами банковской карты.`;
+                               `Для возврата напишите нам на почту ${ADMIN_EMAIL} реквизиты банковской карты и номера билетов.`;
             } else {
-                emailSubject = `Перенос мероприятия "${event.title}"`;
-                emailText = `Уважаемый(ая) ${order.last_name} ${order.first_name},\n\nМероприятие "${event.title}", запланированное на ${formattedDate}, перенесено.\n\nДетали вашего заказа:\n- Количество билетов: ${quantity}\n- Номера билетов: ${allTicketNumbers}\n- Стоимость одного билета: ${ticketPrice} ₽\n- Общая сумма к возврату: ${totalAmount} ₽\n\nВы можете:\n1. Сохранить билеты для новой даты\n2. Или оформить возврат средств\n\nДля возврата:\n1. Ответьте на это письмо\n2. Укажите реквизиты банковской карты\n3. Подтвердите номера билетов: ${allTicketNumbers}\n\nС уважением,\nРазвлекательный комплекс "Француз"`;
+                emailSubject = `🔄 Перенос мероприятия "${event.title}"`;
+                
+                emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${emailSubject}</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .header {
+            background-color: #f39c12;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 0 0 5px 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .ticket-info {
+            background-color: #fef9e7;
+            padding: 15px;
+            border-left: 4px solid #f39c12;
+            margin: 15px 0;
+        }
+        .options {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #777;
+            text-align: center;
+        }
+        .highlight {
+            font-weight: bold;
+            color: #f39c12;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #f39c12;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>${event.title}</h2>
+        <p>Мероприятие перенесено</p>
+    </div>
+    
+    <div class="content">
+        <p>Уважаемый(ая) ${order.last_name} ${order.first_name},</p>
+        
+        <p>Мероприятие <span class="highlight">"${event.title}"</span>, запланированное на <span class="highlight">${formattedDate}</span>, перенесено.</p>
+        
+        <div class="ticket-info">
+            <h3>Детали вашего заказа:</h3>
+            <p>🎫 Количество билетов: <span class="highlight">${quantity}</span></p>
+            <p>🔢 Номера билетов: <span class="highlight">${allTicketNumbers}</span></p>
+            <p>💰 Стоимость одного билета: <span class="highlight">${ticketPrice} ₽</span></p>
+            <p>💳 Общая сумма к возврату: <span class="highlight">${totalAmount} ₽</span></p>
+        </div>
+        
+        <div class="options">
+            <h3>Ваши варианты:</h3>
+            <p>Вы можете:</p>
+            <ol>
+                <li>Сохранить билеты для новой даты мероприятия</li>
+                <li>Или оформить возврат средств</li>
+            </ol>
+            
+            <p>Для возврата:</p>
+            <ol>
+                <li>Ответьте на это письмо</li>
+                <li>Укажите реквизиты банковской карты</li>
+                <li>Подтвердите номера билетов: <span class="highlight">${allTicketNumbers}</span></li>
+            </ol>
+            
+            <p style="text-align: center;">
+                <a href="mailto:${ADMIN_EMAIL}?subject=Возврат средств за билеты ${allTicketNumbers}" class="button">Запросить возврат</a>
+            </p>
+        </div>
+        
+        <p>Новая дата мероприятия будет сообщена дополнительно. Приносим извинения за доставленные неудобства.</p>
+        
+        <p>С уважением,<br>
+        Команда развлекательного комплекса "Француз"</p>
+    </div>
+    
+    <div class="footer">
+        <p>Это письмо отправлено автоматически. Пожалуйста, не отвечайте на него напрямую.</p>
+    </div>
+</body>
+</html>
+                `;
                 
                 telegramText = `🟡 *Уведомление о переносе мероприятия*\n\n` +
                                `Мероприятие "${event.title}" (${formattedDate}) перенесено.\n\n` +
@@ -362,12 +569,12 @@ export class AdminNotificationsHandler {
             }
 
             // Отправляем email
-            await this.sendEmail(order.email, emailSubject, emailText);
+            await this.sendEmail(order.email, emailSubject, emailHtml, true);
             
             // Отправляем Telegram уведомление вместо SMS
             try {
                 await bot.sendMessage(
-                    order.user_id, // предполагаем, что user_id хранится в заказе
+                    order.user_id,
                     telegramText,
                     { parse_mode: 'Markdown' }
                 );
@@ -377,7 +584,8 @@ export class AdminNotificationsHandler {
                 await this.sendEmail(
                     order.email, 
                     emailSubject, 
-                    emailText + `\n\nTelegram уведомление:\n${telegramText.replace(/\*/g, '')}`
+                    emailHtml + `<p><strong>Telegram уведомление:</strong><br>${telegramText.replace(/\*/g, '')}</p>`,
+                    true
                 );
             }
 
@@ -401,15 +609,20 @@ export class AdminNotificationsHandler {
         }
     }
 
-    async sendEmail(to, subject, text) {
+    async sendEmail(to, subject, content, isHtml = false) {
         try {
             const mailOptions = {
-                from: 'ibra001@ibrokhim.ru',
+                from: '"Развлекательный комплекс Француз" <ibra001@ibrokhim.ru>',
                 to,
                 subject,
-                text,
                 replyTo: ADMIN_EMAIL
             };
+
+            if (isHtml) {
+                mailOptions.html = content;
+            } else {
+                mailOptions.text = content;
+            }
 
             await transporter.sendMail(mailOptions);
             return true;
