@@ -5,10 +5,12 @@ import { EventWizard } from './eventWizzard.js';
 import EventService from '../../../services/eventsService.js';
 import { adminPanelController } from './adminPanel.js';
 import menuController from '../mainMenu.js';
-import { adminRefundHandler } from './AdminRefundPanel.js';
+// import { adminRefundHandler } from './AdminRefundPanel.js';
+import { AdminNotificationsHandler } from './adminNotifications.js';
 
 const eventManager = new AdminEventManager(bot, EventService, userStates);
 const eventWizard = new EventWizard(bot, EventService, userStates);
+const adminNotificationsHandler = new AdminNotificationsHandler(); // Инициализация обработчика уведомлений
 
 export const handleAdminMessages = async (msg) => {
     const chatId = msg.chat.id;
@@ -63,7 +65,7 @@ export const handleAdminMessages = async (msg) => {
 };
 
 export const setupAdminHandlers = () => {
-
+    // Обработчики callback_query из AdminNotificatonsHandler
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         const chatId = msg.chat.id;
@@ -71,6 +73,20 @@ export const setupAdminHandlers = () => {
         const userState = userStates[chatId];
 
         try {
+            // Сначала проверяем обработчики уведомлений
+            if (data === 'admin_refund') {
+                await adminNotificationsHandler.showRefundTypeSelection(chatId);
+                await bot.answerCallbackQuery(callbackQuery.id);
+                return;
+            } else if (data.startsWith('refund_type_') || 
+                     data.startsWith('full_refund_event_') || 
+                     data.startsWith('confirm_full_refund_') || 
+                     data === 'cancel_full_refund') {
+                // Пропускаем обработку в AdminNotificatonsHandler
+                return;
+            }
+
+            // Остальная логика обработки
             if (!userState?.isAdminAction && !data.startsWith('admin_')) {
                 return;
             }
@@ -112,13 +128,9 @@ export const setupAdminHandlers = () => {
                 case 'admin_full_stats':
                     await adminPanelController.getFullStatistics(chatId);
                     break;
-                case 'admin_refund':
-                    await adminRefundHandler.showRefundMenu(chatId);
-                    break;
 
                 default:
                     await bot.answerCallbackQuery(callbackQuery.id, {
-                        // text: '❌ Неизвестная команда',
                         show_alert: false
                     });
                     return;
@@ -129,7 +141,37 @@ export const setupAdminHandlers = () => {
         } catch (error) {
             console.error('Admin callback handler error:', error);
             await bot.answerCallbackQuery(callbackQuery.id, {
-                // text: '⚠️ Ошибка обработки',
+                show_alert: true
+            });
+        }
+    });
+
+    // Добавляем обработчики из AdminNotificatonsHandler
+    bot.on('callback_query', async (callbackQuery) => {
+        const data = callbackQuery.data;
+        const chatId = callbackQuery.message.chat.id;
+        
+        try {
+            if (data.startsWith('refund_type_')) {
+                const refundType = data.split('_')[2];
+                await adminNotificationsHandler.showAllEventsForRefund(chatId, refundType);
+            } else if (data.startsWith('full_refund_event_')) {
+                const parts = data.split('_');
+                const eventId = parts[3];
+                const refundType = parts[4];
+                await adminNotificationsHandler.confirmFullRefund(chatId, eventId, refundType, callbackQuery.message.message_id);
+            } else if (data.startsWith('confirm_full_refund_')) {
+                const parts = data.split('_');
+                const eventId = parts[3];
+                const refundType = parts[4];
+                await adminNotificationsHandler.processFullRefund(chatId, eventId, refundType, callbackQuery.message.message_id);
+            } else if (data === 'cancel_full_refund') {
+                await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            }
+        } catch (error) {
+            console.error('Notification handler error:', error);
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: '⚠️ Ошибка обработки уведомления',
                 show_alert: true
             });
         }
